@@ -1,0 +1,6 @@
+data/
+checkpoints_badnets/
+ckpt_epoch_20.pth
+defended_model.pth
+best_main_model.pth
+fault_distribution.png
