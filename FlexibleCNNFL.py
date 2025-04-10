@@ -337,8 +337,7 @@ def visualize_report(report):
     plt.savefig('fault_distribution.png')
     plt.show()
 
-# 7. 主流程
-if __name__ == "__main__":
+def Fltest():
     # # 训练主网络
     # print("Training main network...")
     # train_main_model()
@@ -353,8 +352,6 @@ if __name__ == "__main__":
 
     for name, module in model.named_modules():
         print(f"Module name: {name}, Type: {module.__class__.__name__}")
-
-
 
     # 获取数据
     _, test_loader = get_dataloaders(batch_size=64)
@@ -372,3 +369,7 @@ if __name__ == "__main__":
 
     # 可视化
     visualize_report(fault_report)
+
+# 7. 主流程
+if __name__ == "__main__":
+   Fltest()

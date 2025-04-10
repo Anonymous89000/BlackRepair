@@ -4,6 +4,7 @@
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/Demo.iml" filepath="$PROJECT_DIR$/.idea/Demo.iml" />
       <module fileurl="file://$PROJECT_DIR$/../wp1/backdoor/.idea/backdoor.iml" filepath="$PROJECT_DIR$/../wp1/backdoor/.idea/backdoor.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../inner-main/.idea/inner.iml" filepath="$PROJECT_DIR$/../inner-main/.idea/inner.iml" />
     </modules>
   </component>
 </project>
