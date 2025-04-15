@@ -65,9 +65,17 @@ class FlexibleCNN(nn.Module):
         # self.features = self._make_layers(cfg[vgg_name])
         self.features1 = self._make_layers(cfg[vgg_name][0:3])
         self.features2 = self._make_layers(cfg[vgg_name][3:6])
-        self.features3 = self._make_layers(cfg[vgg_name][6:9])
-        self.features4 = self._make_layers(cfg[vgg_name][9:12])
-        self.features5 = self._make_layers(cfg[vgg_name][12:])
+
+        if vgg_name=='VGG13':
+            self.features3 = self._make_layers(cfg[vgg_name][6:9])
+            self.features4 = self._make_layers(cfg[vgg_name][9:12])
+            self.features5 = self._make_layers(cfg[vgg_name][12:])
+        elif vgg_name=='VGG16':
+            self.features3 = self._make_layers(cfg[vgg_name][6:10])
+            self.features4 = self._make_layers(cfg[vgg_name][10:14])
+            self.features5 = self._make_layers(cfg[vgg_name][14:])
+        else :
+            pass
         self.dense1 = nn.Linear(512, 1024)
         self.dense2 = nn.Linear(1024, 1024)
         self.classifier = nn.Linear(1024, num_class)
@@ -238,7 +246,7 @@ def train_main_model(epochs=5):
 
 # 4. 探针训练
 def train_probes(probe_epochs=3):
-    model = FlexibleCNN().to(device)
+    model = FlexibleCNN(vgg_name='VGG16').to(device)
     model.load_state_dict(torch.load('ckpt_epoch_20.pth'))
 
     # 冻结主网络参数
@@ -347,7 +355,7 @@ def Fltest():
     # train_probes()
 
     # 加载模型
-    model = FlexibleCNN().to(device)
+    model = FlexibleCNN(vgg_name='VGG16').to(device)
     model.load_state_dict(torch.load('ckpt_epoch_20.pth'))
 
     for name, module in model.named_modules():

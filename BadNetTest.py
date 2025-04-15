@@ -119,9 +119,17 @@ class FlexibleCNN(nn.Module):
         # self.features = self._make_layers(cfg[vgg_name])
         self.features1 = self._make_layers(cfg[vgg_name][0:3])
         self.features2 = self._make_layers(cfg[vgg_name][3:6])
-        self.features3 = self._make_layers(cfg[vgg_name][6:9])
-        self.features4 = self._make_layers(cfg[vgg_name][9:12])
-        self.features5 = self._make_layers(cfg[vgg_name][12:])
+        if vgg_name=='VGG13':
+            self.features3 = self._make_layers(cfg[vgg_name][6:9])
+            self.features4 = self._make_layers(cfg[vgg_name][9:12])
+            self.features5 = self._make_layers(cfg[vgg_name][12:])
+        elif vgg_name=='VGG16':
+
+            self.features3 = self._make_layers(cfg[vgg_name][6:10])
+            self.features4 = self._make_layers(cfg[vgg_name][10:14])
+            self.features5 = self._make_layers(cfg[vgg_name][14:])
+        else :
+            pass
         self.dense1 = nn.Linear(512, 1024)
         self.dense2 = nn.Linear(1024, 1024)
         self.classifier = nn.Linear(1024, num_class)
@@ -194,7 +202,7 @@ def badnetattack():
     CONFIG['img_size'] = img_size  # 更新配置
 
     # 初始化模型
-    model = FlexibleCNN()
+    model = FlexibleCNN(vgg_name='VGG16')
     loss = nn.CrossEntropyLoss()
 
     # 初始化BadNets
