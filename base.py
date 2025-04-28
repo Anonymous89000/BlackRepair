@@ -329,7 +329,7 @@ class Base(object):
                             self.current_schedule['experiment_name'] + '_' + time.strftime("%Y-%m-%d_%H:%M:%S",
                                                                                            time.localtime()))
         os.makedirs(work_dir, exist_ok=True)
-        log = Log(osp.join(work_dir, 'log.txt'))
+        log = Log(osp.join(work_dir, 'log.txt'),verbose=False)
 
         if test_dataset is not None:
             last_time = time.time()
@@ -344,7 +344,7 @@ class Base(object):
                   time.strftime("[%Y-%m-%d_%H:%M:%S] ", time.localtime()) + \
                   f"Top-1 correct / Total: {top1_correct}/{total_num}, Top-1 accuracy: {top1_correct / total_num}, Top-5 correct / Total: {top5_correct}/{total_num}, Top-5 accuracy: {top5_correct / total_num}, time: {time.time() - last_time}\n"
             log(msg)
-
+        res1=top1_correct / total_num
         if poisoned_test_dataset is not None:
             last_time = time.time()
             # test result on poisoned test dataset
@@ -358,3 +358,5 @@ class Base(object):
                   time.strftime("[%Y-%m-%d_%H:%M:%S] ", time.localtime()) + \
                   f"Top-1 correct / Total: {top1_correct}/{total_num}, Top-1 accuracy: {top1_correct / total_num}, Top-5 correct / Total: {top5_correct}/{total_num}, Top-5 accuracy: {top5_correct / total_num}, time: {time.time() - last_time}\n"
             log(msg)
+        res2=top1_correct / total_num
+        return res1,res2

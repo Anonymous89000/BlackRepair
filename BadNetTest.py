@@ -19,7 +19,7 @@ CONFIG = {
     'target_class': 0,  # 攻击目标类别
     'poison_rate': 0.1,  # 训练集投毒比例
     'batch_size': 128,
-    'epochs': 20,
+    'epochs': 50,
     'lr': 0.01,
     'device': 'GPU' if torch.cuda.is_available() else 'cpu'
 }
@@ -202,15 +202,17 @@ def badnetattack():
     CONFIG['img_size'] = img_size  # 更新配置
 
     # 初始化模型
-    model = FlexibleCNN(vgg_name='VGG16')
-    loss = nn.CrossEntropyLoss()
+    model_bd = FlexibleCNN(vgg_name='VGG13')
+    model_raw=FlexibleCNN(vgg_name='VGG13')
+    loss_bd= nn.CrossEntropyLoss()
+    loss_raw=nn.CrossEntropyLoss()
 
     # 初始化BadNets
     attacker = BadNets(
         train_dataset=train_dataset,
         test_dataset=test_dataset,
-        model=model,
-        loss=loss,
+        model=model_bd,
+        loss=loss_bd,
         y_target=cfg['target_class'],
         poisoned_rate=cfg['poison_rate'],
         schedule={
@@ -233,15 +235,64 @@ def badnetattack():
         }
     )
 
+
+
+
+
+    rawtrainer=BadNets(
+        train_dataset=train_dataset,
+        test_dataset=test_dataset,
+        model=model_raw,
+        loss=loss_bd,
+        y_target=cfg['target_class'],
+        poisoned_rate=0,
+        schedule={
+            'device': cfg['device'],
+            'GPU_num': 1,
+            'benign_training': False,
+            'batch_size': cfg['batch_size'],
+            'num_workers': 4,
+            'lr': cfg['lr'],
+            'momentum': 0.9,
+            'weight_decay': 1e-4,
+            'gamma': 0.1,
+            'schedule': [int(cfg['epochs'] * 0.5), int(cfg['epochs'] * 0.75)],
+            'epochs': cfg['epochs'],
+            'log_iteration_interval': 100,
+            'test_epoch_interval': 5,
+            'save_epoch_interval': 10,
+            'save_dir': 'checkpoints_badnets',
+            'experiment_name': f'BadNets_{cfg["dataset_name"]}'
+        }
+    )
+
+
+    print(f"Training rawnet on {cfg['dataset_name']}...")
+    rawtrainer.train()
+
     # 训练
-    print(f"Training on {cfg['dataset_name']}...")
+    print(f"Training bdnet on {cfg['dataset_name']}...")
     attacker.train()
 
+    rawmodel_path="transpace/vgg13_raw.pth"
+    bdmodel_path="transpace/vgg13_bd.pth"
+    # rawtrainer.model.load_state_dict(torch.load(rawmodel_path))
+    # attacker.model.load_state_dict(torch.load(bdmodel_path))
+
     # 测试
+    print("\nTesting rawnet on clean data and poisoned data:")
+    rc,rp=rawtrainer.test(test_dataset=attacker.test_dataset,poisoned_test_dataset=attacker.poisoned_test_dataset)
+
+    print("\nTesting bdnet on clean data and poisoned data:")
+    bc,bp=attacker.test(test_dataset=attacker.test_dataset,poisoned_test_dataset=attacker.poisoned_test_dataset)
+
+    print("Extended Result: bc~rc  bp>>rp")
+    print(f"rc:{rc}  bc:{bc}\nrp:{rp} bp:{bp}")
 
 
-    print("\nTesting on clean data and poisoned data:")
-    attacker.test(test_dataset=attacker.test_dataset,poisoned_test_dataset=attacker.poisoned_test_dataset)
+    torch.save(rawtrainer.model.state_dict(), rawmodel_path)
+    torch.save(attacker.model.state_dict(),bdmodel_path)
+
 
     # 显示最终结果
     #print(f"\nFinal Results ({cfg['dataset_name']}):")
