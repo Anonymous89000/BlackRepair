@@ -8,7 +8,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from torchvision.datasets import DatasetFolder, MNIST, CIFAR10
+from torchvision.datasets import DatasetFolder, MNIST, CIFAR10,ImageFolder
 
 from LogUtil import  Log
 

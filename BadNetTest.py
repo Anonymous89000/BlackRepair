@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torchvision
+from torchvision import transforms  # <-- 添加这行
 from torchvision.transforms import Compose, ToTensor, Normalize
 from BadNets import *
 import torch.nn.functional as F
@@ -16,10 +17,13 @@ cfg = {
 CONFIG = {
     'dataset_name': 'CIFAR10',
     #'dataset_name': 'MNIST',  # 可切换为 'CIFAR10'
+    #'dataset_name': 'IMAGENET10',
     'target_class': 0,  # 攻击目标类别
     'poison_rate': 0.1,  # 训练集投毒比例
     'batch_size': 128,
-    'epochs': 50,
+    'pattern':None,
+    'weight':None,
+    'epochs': 10,
     'lr': 0.01,
     'device': 'GPU' if torch.cuda.is_available() else 'cpu'
 }
@@ -33,7 +37,18 @@ torch.backends.cudnn.benchmark = False
 # 1. 灵活数据集准备
 def prepare_datasets(dataset_name):
     # 公共参数
-    common_transforms = [ToTensor()]
+    common_transforms = []
+    if dataset_name in ['MNIST', 'CIFAR10']:
+        common_transforms.append(ToTensor())
+    elif dataset_name == 'IMAGENET10':
+        # ImageNet标准预处理流程
+        common_transforms.extend([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+        ])
+    else:
+        raise ValueError(f"Unsupported dataset: {dataset_name}")
 
     # 数据集特定配置
     if dataset_name == 'MNIST':
@@ -48,26 +63,42 @@ def prepare_datasets(dataset_name):
         dataset_class = torchvision.datasets.CIFAR10
         in_channels = 3
         img_size = 32
+    elif dataset_name == 'IMAGENET10':
+        # ImageNet标准归一化参数
+        mean = [0.485, 0.456, 0.406]
+        std = [0.229, 0.224, 0.225]
+        dataset_class = torchvision.datasets.ImageFolder
+        in_channels = 3
+        img_size = 224
     else:
         raise ValueError(f"Unsupported dataset: {dataset_name}")
 
     # 添加标准化
     common_transforms.append(Normalize(mean, std))
 
-    # 训练测试集
-    train_dataset = dataset_class(
-        root='./data',
-        train=True,
-        download=True,
-        transform=Compose(common_transforms)
-    )
-
-    test_dataset = dataset_class(
-        root='./data',
-        train=False,
-        download=True,
-        transform=Compose(common_transforms)
-    )
+    # 数据集加载
+    if dataset_name == 'IMAGENET10':
+        train_dataset = dataset_class(
+            root='./data/imagenet10/train',  # 根据实际路径修改
+            transform=Compose(common_transforms)
+        )
+        test_dataset = dataset_class(
+            root='./data/imagenet10/val',
+            transform=Compose(common_transforms)
+        )
+    else:
+        train_dataset = dataset_class(
+            root='./data',
+            train=True,
+            download=True,
+            transform=Compose(common_transforms)
+        )
+        test_dataset = dataset_class(
+            root='./data',
+            train=False,
+            download=True,
+            transform=Compose(common_transforms)
+        )
 
     return train_dataset, test_dataset, in_channels, img_size
 
@@ -130,6 +161,9 @@ class FlexibleCNN(nn.Module):
             self.features5 = self._make_layers(cfg[vgg_name][14:])
         else :
             pass
+
+
+
         self.dense1 = nn.Linear(512, 1024)
         self.dense2 = nn.Linear(1024, 1024)
         self.classifier = nn.Linear(1024, num_class)
@@ -153,6 +187,8 @@ class FlexibleCNN(nn.Module):
             f4 = self.features4(f3)
             p4 = self.probe4(f4)
             f5 = self.features5(f4)
+
+
             f5 = f5.view(f5.size(0), -1)
             p5 = self.probe5(f5)
             d1 = F.relu(self.dense1(f5))
@@ -168,6 +204,8 @@ class FlexibleCNN(nn.Module):
             f3 = self.features3(f2)
             f4 = self.features4(f3)
             f5 = self.features5(f4)
+            # 此处要注意
+            #f5 = F.adaptive_avg_pool2d(f5, output_size=(1, 1))
             f5 = f5.view(f5.size(0), -1)
             d1 = F.relu(self.dense1(f5))
             d2 = F.relu(self.dense2(d1))
@@ -199,7 +237,24 @@ def badnetattack():
 
     # 准备数据
     train_dataset, test_dataset, in_channels, img_size = prepare_datasets(cfg['dataset_name'])
-    CONFIG['img_size'] = img_size  # 更新配置
+    cfg['img_size'] = img_size  # 更新配置
+
+    # 若使用IMAGENET10需要加大trigger尺寸
+    if cfg['dataset_name'] == 'IMAGENET10':
+        trigger_size = 20
+        # 创建全0模板
+        pattern = torch.zeros((3, 224, 224), dtype=torch.uint8)
+        # 在右下角放白色方块
+        pattern[:, -trigger_size:, -trigger_size:] = 255
+
+        weight = torch.zeros((3, 224, 224), dtype=torch.float32)
+        weight[:, -trigger_size:, -trigger_size:] = 1.0
+
+        cfg['pattern'] = pattern
+        cfg['weight'] = weight
+    else:  # 原有逻辑保持不变
+        cfg['pattern'] = None
+        cfg['weight'] = None
 
     # 初始化模型
     model_bd = FlexibleCNN(vgg_name='VGG13')
@@ -215,6 +270,8 @@ def badnetattack():
         loss=loss_bd,
         y_target=cfg['target_class'],
         poisoned_rate=cfg['poison_rate'],
+        pattern=cfg['pattern'],
+        weight=cfg['weight'],
         schedule={
             'device': cfg['device'],
             'GPU_num': 1,
@@ -246,6 +303,8 @@ def badnetattack():
         loss=loss_bd,
         y_target=cfg['target_class'],
         poisoned_rate=0,
+        pattern=cfg['pattern'],
+        weight=cfg['weight'],
         schedule={
             'device': cfg['device'],
             'GPU_num': 1,
@@ -290,8 +349,8 @@ def badnetattack():
     print(f"rc:{rc}  bc:{bc}\nrp:{rp} bp:{bp}")
 
 
-    torch.save(rawtrainer.model.state_dict(), rawmodel_path)
-    torch.save(attacker.model.state_dict(),bdmodel_path)
+    # torch.save(rawtrainer.model.state_dict(), rawmodel_path)
+    # torch.save(attacker.model.state_dict(),bdmodel_path)
 
 
     # 显示最终结果
