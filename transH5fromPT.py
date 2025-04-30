@@ -55,7 +55,7 @@ def convert_pth_to_h5():
         )
 
         # === Step 2: ONNX名称清洗 ===
-        #sanitize_onnx_names(onnx_path)
+        sanitize_onnx_names(onnx_path)
 
         # === Step 3: 转换为Keras H5 ===
         # 加载并转换ONNX
