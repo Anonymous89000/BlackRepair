@@ -5,6 +5,7 @@ from torchvision import transforms  # <-- 添加这行
 from torchvision.transforms import Compose, ToTensor, Normalize
 from BadNets import *
 import torch.nn.functional as F
+from model.inner_vgg import VGG16_dense
 
 cfg = {
     'VGG11': [64, 'M', 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
@@ -14,18 +15,24 @@ cfg = {
 }
 
 # 配置参数（用户可修改区域）
+# CIFAR10配置: 128 20
+# imagenet10
+
 CONFIG = {
-    'dataset_name': 'CIFAR10',
+    #'dataset_name': 'CIFAR10',
     #'dataset_name': 'MNIST',  # 可切换为 'CIFAR10'
-    #'dataset_name': 'IMAGENET10',
+    'dataset_name': 'IMAGENET10',
     'target_class': 0,  # 攻击目标类别
     'poison_rate': 0.1,  # 训练集投毒比例
-    'batch_size': 128,
+    'batch_size': 32,
     'pattern':None,
     'weight':None,
-    'epochs': 10,
+    'epochs': 3,
     'lr': 0.01,
-    'device': 'GPU' if torch.cuda.is_available() else 'cpu'
+    'device': 'GPU' if torch.cuda.is_available() else 'cpu',
+    'poisoned_transform_train_index': 2,
+    'poisoned_transform_test_index': 2,
+    'poisoned_target_transform_index': 0
 }
 
 # 设置随机种子保证可重复性
@@ -167,13 +174,13 @@ class FlexibleCNN(nn.Module):
         self.dense1 = nn.Linear(512, 1024)
         self.dense2 = nn.Linear(1024, 1024)
         self.classifier = nn.Linear(1024, num_class)
-        self.probe1 = Probe(64, 2, num_class=num_class)
-        self.probe2 = Probe(128, 2, num_class=num_class)
-        self.probe3 = Probe(256, 1, num_class=num_class)
-        self.probe4 = Probe(512, 1, num_class=num_class)
-        self.probe5 = nn.Linear(512, num_class)
-        self.probe6 = nn.Linear(1024, num_class)
-        self.probe7 = nn.Linear(1024, num_class)
+        # self.probe1 = Probe(64, 2, num_class=num_class)
+        # self.probe2 = Probe(128, 2, num_class=num_class)
+        # self.probe3 = Probe(256, 1, num_class=num_class)
+        # self.probe4 = Probe(512, 1, num_class=num_class)
+        # self.probe5 = nn.Linear(512, num_class)
+        # self.probe6 = nn.Linear(1024, num_class)
+        # self.probe7 = nn.Linear(1024, num_class)
 
     def forward(self, x, probe=False):
 
@@ -257,8 +264,11 @@ def badnetattack():
         cfg['weight'] = None
 
     # 初始化模型
-    model_bd = FlexibleCNN(vgg_name='VGG13')
-    model_raw=FlexibleCNN(vgg_name='VGG13')
+    # model_bd = FlexibleCNN(vgg_name='VGG13')
+    # model_raw=FlexibleCNN(vgg_name='VGG13')
+
+    model_bd=VGG16_dense()
+    model_raw=VGG16_dense()
     loss_bd= nn.CrossEntropyLoss()
     loss_raw=nn.CrossEntropyLoss()
 
@@ -272,6 +282,9 @@ def badnetattack():
         poisoned_rate=cfg['poison_rate'],
         pattern=cfg['pattern'],
         weight=cfg['weight'],
+        poisoned_transform_train_index=cfg['poisoned_transform_train_index'],
+        poisoned_transform_test_index=cfg['poisoned_transform_test_index'],
+        poisoned_target_transform_index=cfg['poisoned_target_transform_index'],
         schedule={
             'device': cfg['device'],
             'GPU_num': 1,
@@ -305,6 +318,9 @@ def badnetattack():
         poisoned_rate=0,
         pattern=cfg['pattern'],
         weight=cfg['weight'],
+        poisoned_transform_train_index=cfg['poisoned_transform_train_index'],
+        poisoned_transform_test_index=cfg['poisoned_transform_test_index'],
+        poisoned_target_transform_index=cfg['poisoned_target_transform_index'],
         schedule={
             'device': cfg['device'],
             'GPU_num': 1,
@@ -325,6 +341,11 @@ def badnetattack():
         }
     )
 
+    rawmodel_path= "transpace/vgg16_raw.pth"
+    bdmodel_path= "transpace/vgg16_bd.pth"
+    rawtrainer.model.load_state_dict(torch.load(rawmodel_path))
+    attacker.model.load_state_dict(torch.load(bdmodel_path))
+
 
     print(f"Training rawnet on {cfg['dataset_name']}...")
     rawtrainer.train()
@@ -333,10 +354,7 @@ def badnetattack():
     print(f"Training bdnet on {cfg['dataset_name']}...")
     attacker.train()
 
-    rawmodel_path="transpace/vgg13_raw.pth"
-    bdmodel_path="transpace/vgg13_bd.pth"
-    # rawtrainer.model.load_state_dict(torch.load(rawmodel_path))
-    # attacker.model.load_state_dict(torch.load(bdmodel_path))
+
 
     # 测试
     print("\nTesting rawnet on clean data and poisoned data:")
@@ -349,14 +367,11 @@ def badnetattack():
     print(f"rc:{rc}  bc:{bc}\nrp:{rp} bp:{bp}")
 
 
-    # torch.save(rawtrainer.model.state_dict(), rawmodel_path)
-    # torch.save(attacker.model.state_dict(),bdmodel_path)
+    torch.save(rawtrainer.model.state_dict(), rawmodel_path)
+    torch.save(attacker.model.state_dict(),bdmodel_path)
 
 
-    # 显示最终结果
-    #print(f"\nFinal Results ({cfg['dataset_name']}):")
-    #print(f"Clean Accuracy: {attacker.test_results['benign_accuracy']:.2f}%")
-    #print(f"Attack Success Rate: {attacker.test_results['poisoned_accuracy']:.2f}%")
+
 
 
 if __name__ == "__main__":

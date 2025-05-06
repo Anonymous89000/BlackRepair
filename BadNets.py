@@ -30,6 +30,7 @@ class AddTrigger:
         Returns:
             torch.Tensor: Poisoned image, shape (C, H, W).
         """
+        #使用uint8  会报错 原因是触发器加入的时机要在totensor之前
         return (self.weight * img + self.res).type(torch.uint8)
 
 
@@ -111,6 +112,7 @@ class AddDatasetFolderTrigger(AddTrigger):
                 img = add_trigger(img)
             # H x W x C
             else:
+                #注意此处的处理可能是因为数据加载时使用tensorflow还是pytorch的区别
                 img = img.permute(2, 0, 1)
                 img = add_trigger(img)
                 img = img.permute(1, 2, 0)

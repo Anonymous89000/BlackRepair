@@ -5,7 +5,7 @@ from onnx2keras import onnx_to_keras
 import re
 import os
 from BadNetTest import FlexibleCNN  # 请确保这个模块能正常导入
-
+from model.inner_vgg import VGG16_dense
 
 # ===================== 工具函数 =====================
 def sanitize_onnx_names(onnx_path):
@@ -30,19 +30,20 @@ def convert_pth_to_h5():
     """主转换流程：pth → onnx → h5"""
     # 配置参数
     MODEL_DIR = './transpace'
-    INPUT_SHAPE = (1, 3, 32, 32)  # 输入形状 (batch, channel, height, width)
+    #对于不同的数据集有不同的配置
+    INPUT_SHAPE = (1, 3, 224, 224)  # 输入形状 (batch, channel, height, width)
 
     def convert(model_type):
         """单个模型转换流程"""
         # === Step 1: 转换为ONNX ===
         # 加载PyTorch模型
-        model = FlexibleCNN('VGG13')
-        pth_path = os.path.join(MODEL_DIR, f"vgg13_{model_type}.pth")
+        model = VGG16_dense()
+        pth_path = os.path.join(MODEL_DIR, f"vgg16_{model_type}.pth")
         model.load_state_dict(torch.load(pth_path))
         model.eval()
 
         # 导出ONNX
-        onnx_path = os.path.join(MODEL_DIR, f"vgg13_{model_type}.onnx")
+        onnx_path = os.path.join(MODEL_DIR, f"vgg16_{model_type}.onnx")
         dummy_input = torch.randn(*INPUT_SHAPE)
         torch.onnx.export(
             model,
@@ -69,12 +70,14 @@ def convert_pth_to_h5():
         )
 
         # === Step 4: 最终保存 ===
-        h5_path = os.path.join(MODEL_DIR, f"vgg13_{model_type}.h5")
+        h5_path = os.path.join(MODEL_DIR, f"vgg16_{model_type}.h5")
         keras_model.save(h5_path)
         print(f"转换成功: {h5_path}")
 
     # 执行转换流程
     for model_type in ['raw', 'bd']:
+        convert(model_type)
+        exit(0)
         try:
             print(f"\n开始转换 {model_type} 模型...")
             convert(model_type)
