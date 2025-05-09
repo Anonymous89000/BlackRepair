@@ -6,6 +6,9 @@ from torchvision.transforms import Compose, ToTensor, Normalize
 from BadNets import *
 import torch.nn.functional as F
 from model.inner_vgg import VGG16_dense
+from torchvision import models
+
+from utils.utils import pretrained
 
 cfg = {
     'VGG11': [64, 'M', 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
@@ -27,7 +30,7 @@ CONFIG = {
     'batch_size': 32,
     'pattern':None,
     'weight':None,
-    'epochs': 3,
+    'epochs': 10,
     'lr': 0.01,
     'device': 'GPU' if torch.cuda.is_available() else 'cpu',
     'poisoned_transform_train_index': 2,
@@ -238,7 +241,7 @@ class FlexibleCNN(nn.Module):
 
 
 # 主流程
-def badnetattack():
+def badnetattack(pretrain=False,train=False,saveRes=False):
     # 加载配置
     cfg = CONFIG
 
@@ -267,8 +270,33 @@ def badnetattack():
     # model_bd = FlexibleCNN(vgg_name='VGG13')
     # model_raw=FlexibleCNN(vgg_name='VGG13')
 
-    model_bd=VGG16_dense()
-    model_raw=VGG16_dense()
+    # model_bd=VGG16_dense()
+    # model_raw=VGG16_dense()
+    model_bd=models.vgg16(pretrained=False)
+    model_raw=models.vgg16(pretrained=False)
+    num_features = model_bd.classifier[6].in_features  # 获取原层输入维度
+
+    model_bd.classifier[6] = nn.Linear(num_features, 10)  # 修改为10类输出
+    model_raw.classifier[6] = nn.Linear(num_features, 10)  # 修改为10类输出
+
+    nn.init.kaiming_normal_(model_bd.classifier[6].weight, mode='fan_in', nonlinearity='relu')
+    nn.init.constant_(model_bd.classifier[6].bias, 0.0)
+
+    nn.init.kaiming_normal_(model_raw.classifier[6].weight, mode='fan_in', nonlinearity='relu')
+    nn.init.constant_(model_raw.classifier[6].bias, 0.0)
+
+    #参数冻结 非常有效!
+    #为什么不冻结参数会产生NAN呢?为什么softmax输入需要大于1e-8
+    # for param in model_bd.parameters():
+    #     param.requires_grad = False
+    # for param in model_bd.classifier[6].parameters():
+    #     param.requires_grad = True
+    for param in model_raw.parameters():
+        param.requires_grad = False
+    for param in model_raw.classifier[6].parameters():
+        param.requires_grad = True
+
+
     loss_bd= nn.CrossEntropyLoss()
     loss_raw=nn.CrossEntropyLoss()
 
@@ -313,7 +341,7 @@ def badnetattack():
         train_dataset=train_dataset,
         test_dataset=test_dataset,
         model=model_raw,
-        loss=loss_bd,
+        loss=loss_raw,
         y_target=cfg['target_class'],
         poisoned_rate=0,
         pattern=cfg['pattern'],
@@ -341,18 +369,20 @@ def badnetattack():
         }
     )
 
-    rawmodel_path= "transpace/vgg16_raw.pth"
-    bdmodel_path= "transpace/vgg16_bd.pth"
-    rawtrainer.model.load_state_dict(torch.load(rawmodel_path))
-    attacker.model.load_state_dict(torch.load(bdmodel_path))
+    rawmodel_src_path= "transpace/vgg16std9913_raw.pth"
+    bdmodel_src_path= "transpace/vgg16std9556_bd.pth"
+    if pretrain==True:
+        rawtrainer.model.load_state_dict(torch.load(rawmodel_src_path))
+        attacker.model.load_state_dict(torch.load(bdmodel_src_path))
 
 
-    print(f"Training rawnet on {cfg['dataset_name']}...")
-    rawtrainer.train()
+    if train==True:
+        print(f"Training rawnet on {cfg['dataset_name']}...")
+        #rawtrainer.train()
 
-    # 训练
-    print(f"Training bdnet on {cfg['dataset_name']}...")
-    attacker.train()
+        # 训练
+        print(f"Training bdnet on {cfg['dataset_name']}...")
+        attacker.train()
 
 
 
@@ -367,12 +397,15 @@ def badnetattack():
     print(f"rc:{rc}  bc:{bc}\nrp:{rp} bp:{bp}")
 
 
-    torch.save(rawtrainer.model.state_dict(), rawmodel_path)
-    torch.save(attacker.model.state_dict(),bdmodel_path)
+    rawmodel_tar_path= "transpace/vgg16std_raw.pth"
+    bdmodel_tar_path= "transpace/vgg16std_bd.pth"
+    if saveRes==True:
+        torch.save(rawtrainer.model.state_dict(), rawmodel_tar_path)
+        torch.save(attacker.model.state_dict(),bdmodel_tar_path)
 
 
 
 
 
 if __name__ == "__main__":
-    badnetattack()
+    badnetattack(pretrain=True,train=False,saveRes=False)

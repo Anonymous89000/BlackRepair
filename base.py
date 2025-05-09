@@ -200,6 +200,9 @@ class Base(object):
                 optimizer.zero_grad()
                 predict_digits = self.model(batch_img)
                 loss = self.loss(predict_digits, batch_label)
+                if torch.isnan(loss):
+                    brk=1
+                    brk=brk+1
                 loss.backward()
                 optimizer.step()
 

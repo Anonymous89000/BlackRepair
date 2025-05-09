@@ -6,7 +6,9 @@ import re
 import os
 from BadNetTest import FlexibleCNN  # 请确保这个模块能正常导入
 from model.inner_vgg import VGG16_dense
-
+from torchvision import models
+import torch.nn as nn
+from keras.layers import Lambda
 # ===================== 工具函数 =====================
 def sanitize_onnx_names(onnx_path):
     """清洗ONNX节点名称中的非法字符"""
@@ -37,13 +39,15 @@ def convert_pth_to_h5():
         """单个模型转换流程"""
         # === Step 1: 转换为ONNX ===
         # 加载PyTorch模型
-        model = VGG16_dense()
-        pth_path = os.path.join(MODEL_DIR, f"vgg16_{model_type}.pth")
+        model = models.vgg16()
+        num_features = model.classifier[6].in_features  # 获取原层输入维度
+        model.classifier[6]=nn.Linear(num_features, 10)
+        pth_path = os.path.join(MODEL_DIR, f"vgg16{model_type}.pth")
         model.load_state_dict(torch.load(pth_path))
         model.eval()
 
         # 导出ONNX
-        onnx_path = os.path.join(MODEL_DIR, f"vgg16_{model_type}.onnx")
+        onnx_path = os.path.join(MODEL_DIR, f"vgg16{model_type}.onnx")
         dummy_input = torch.randn(*INPUT_SHAPE)
         torch.onnx.export(
             model,
@@ -62,20 +66,22 @@ def convert_pth_to_h5():
         # 加载并转换ONNX
         onnx_model = onnx.load(onnx_path)
         keras_model = onnx_to_keras(
+
             onnx_model,
-            input_names=["input"],
-            name_policy='renumerate',  # 强制名称合规
-            verbose=True,
-            change_ordering=True  # 通道顺序转换 (CHW→HWC)
+            input_names = ["input"],
+            name_policy = 'renumerate',
+            verbose = True,
+            change_ordering = True,
+
         )
 
         # === Step 4: 最终保存 ===
-        h5_path = os.path.join(MODEL_DIR, f"vgg16_{model_type}.h5")
-        keras_model.save(h5_path)
+        h5_path = os.path.join(MODEL_DIR, f"vgg16{model_type}.h5")
+        keras_model.save(h5_path, save_format="h5", save_kwargs={"safe_mode": False})
         print(f"转换成功: {h5_path}")
 
     # 执行转换流程
-    for model_type in ['raw', 'bd']:
+    for model_type in ['std9913_raw', 'std9556_bd']:
         convert(model_type)
         exit(0)
         try:
