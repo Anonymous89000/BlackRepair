@@ -50,7 +50,7 @@ CONFIG = {
     'batch_size': 32,
     'pattern':None,
     'weight':None,
-    'epochs': 10,
+    'epochs': 20,
     'lr': 0.01,
     'device': 'GPU' if torch.cuda.is_available() else 'cpu',
     'poisoned_transform_train_index': 0,
@@ -168,7 +168,7 @@ def backdoorattack(arg):
     train=arg.train
     saveRes=arg.saveRes
     cfg['dataset_name']=arg.set
-
+    cfg['bd_type']=arg.bdtype
 
     # 准备数据
     train_dataset, test_dataset, in_channels, img_size = prepare_datasets(cfg['dataset_name'])
@@ -204,10 +204,12 @@ def backdoorattack(arg):
         for param in model_raw.classifier[6].parameters():
             param.requires_grad = True
     elif arg.arch=="innervgg16":
+        #imagenet10
         model_bd=VGG16_dense()
         model_raw=VGG16_dense()
         pass
     elif arg.arch=="innervgg13":
+        #cifar10
         model_bd = VGG13_dense(vgg_name='VGG13')
         model_raw= VGG13_dense(vgg_name='VGG13')
     elif arg.arch=="CNN6_MNIST":
@@ -236,7 +238,7 @@ def backdoorattack(arg):
         'train_dataset': train_dataset,
         'test_dataset': test_dataset,
         'model': model_raw,
-        'loss': loss_bd,
+        'loss': loss_raw,
         'y_target': cfg['target_class'],
         'poisoned_rate': 0
     }
@@ -405,6 +407,8 @@ def backdoorattack(arg):
 
     rawmodel_src_path= "transpace/vgg16std9913_raw.pth"
     bdmodel_src_path= "transpace/vgg16std9556_bd.pth"
+
+
     if pretrain==True:
         rawtrainer.model.load_state_dict(torch.load(rawmodel_src_path))
         attacker.model.load_state_dict(torch.load(bdmodel_src_path))
@@ -431,8 +435,12 @@ def backdoorattack(arg):
     print(f"rc:{rc}  bc:{bc}\nrp:{rp} bp:{bp}")
 
 
-    rawmodel_tar_path= "transpace/vgg16std_raw.pth"
-    bdmodel_tar_path= "transpace/vgg16std_bd.pth"
+    # rawmodel_tar_path= "transpace/vgg16std_raw.pth"
+    # bdmodel_tar_path= "transpace/vgg16std_bd.pth"
+
+    rawmodel_tar_path= f"transpace/{arg.set}_{arg.arch}_{arg.bdtype}_raw.pth"
+    bdmodel_tar_path= f"transpace/{arg.set}_{arg.arch}_{arg.bdtype}_bd.pth"
+
     if saveRes==True:
         torch.save(rawtrainer.model.state_dict(), rawmodel_tar_path)
         torch.save(attacker.model.state_dict(),bdmodel_tar_path)

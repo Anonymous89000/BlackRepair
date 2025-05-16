@@ -535,13 +535,13 @@ class VGG13_dense(nn.Module):  # for ai lancet
         self.dense1 = nn.Linear(512, 1024)
         self.dense2 = nn.Linear(1024, 1024)
         self.classifier = nn.Linear(1024, num_class)
-        self.probe1 = Probe(64, 2, num_class=num_class)
-        self.probe2 = Probe(128, 2, num_class=num_class)
-        self.probe3 = Probe(256, 1, num_class=num_class)
-        self.probe4 = Probe(512, 1, num_class=num_class)
-        self.probe5 = nn.Linear(512, num_class)
-        self.probe6 = nn.Linear(1024, num_class)
-        self.probe7 = nn.Linear(1024, num_class)
+        # self.probe1 = Probe(64, 2, num_class=num_class)
+        # self.probe2 = Probe(128, 2, num_class=num_class)
+        # self.probe3 = Probe(256, 1, num_class=num_class)
+        # self.probe4 = Probe(512, 1, num_class=num_class)
+        # self.probe5 = nn.Linear(512, num_class)
+        # self.probe6 = nn.Linear(1024, num_class)
+        # self.probe7 = nn.Linear(1024, num_class)
     def forward(self, x, probe=False):
 
         if probe:
