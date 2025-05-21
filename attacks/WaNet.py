@@ -438,7 +438,7 @@ class PoisonedCIFAR10(CIFAR10):
 
 def CreatePoisonedDataset(benign_dataset, y_target, poisoned_rate, identity_grid, noise_grid, noise, poisoned_transform_index, poisoned_target_transform_index):
     class_name = type(benign_dataset)
-    if class_name == DatasetFolder:
+    if (class_name == DatasetFolder) or (class_name== ImageFolder):
         return PoisonedDatasetFolder(benign_dataset, y_target, poisoned_rate, identity_grid, noise_grid, noise, poisoned_transform_index, poisoned_target_transform_index)
     elif class_name == MNIST:
         return PoisonedMNIST(benign_dataset, y_target, poisoned_rate, identity_grid, noise_grid, noise, poisoned_transform_index, poisoned_target_transform_index)

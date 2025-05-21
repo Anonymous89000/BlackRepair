@@ -39,6 +39,8 @@ BACKDOOR_PARAMS = {
 # CIFAR10配置: 128 20
 # imagenet10
 
+
+
 CONFIG = {
     #'dataset_name': 'CIFAR10',
     'dataset_name': 'MNIST',  # 可切换为 'CIFAR10'
@@ -56,6 +58,12 @@ CONFIG = {
     'poisoned_transform_train_index': 0,
     'poisoned_transform_test_index': 0,
     'poisoned_target_transform_index': 0,
+    'identity_grid':None,
+    'noise_grid': None,
+    'noise': True,
+    's': 0.5,
+    'grid_rescale': 0,
+    'img_size':None
     #**BACKDOOR_PARAMS['BadNets']
 }
 
@@ -79,7 +87,7 @@ def prepare_datasets(dataset_name):
             transforms.CenterCrop(224),
             transforms.ToTensor(),
         ])
-    elif dataset_name == 'GTSRB':  # 新增GTRSB处理
+    elif dataset_name == 'GTRSB':  # 新增GTRSB处理
         common_transforms.extend([
             transforms.Resize((64, 64)),  # 统一调整尺寸
             transforms.ToTensor(),
@@ -107,7 +115,7 @@ def prepare_datasets(dataset_name):
         dataset_class = torchvision.datasets.ImageFolder
         in_channels = 3
         img_size = 224
-    elif dataset_name == 'GTSRB':  # 新增GTRSB处理
+    elif dataset_name == 'GTRSB':  # 新增GTRSB处理
         # GTRSB参数（使用标准ImageNet参数作为示例）
         mean = [0.3403, 0.3121, 0.3214]  # GTRSB专用均值
         std = [0.2724, 0.2608, 0.2669]  # GTRSB专用标准差
@@ -134,11 +142,11 @@ def prepare_datasets(dataset_name):
         )
     elif dataset_name=='GTRSB':
         train_dataset = dataset_class(
-            root='./data/gtrsb/Training',  # 训练集路径
+            root='./data/gtrsb/train',  # 训练集路径
             transform=Compose(common_transforms)
         )
         test_dataset = dataset_class(
-            root='./data/gtrsb/Testing',  # 测试集路径
+            root='./data/gtrsb/val',  # 测试集路径
             transform=Compose(common_transforms)
         )
 
@@ -169,6 +177,7 @@ def backdoorattack(arg):
     saveRes=arg.saveRes
     cfg['dataset_name']=arg.set
     cfg['bd_type']=arg.bdtype
+    cfg['architecture']=arg.arch
 
     # 准备数据
     train_dataset, test_dataset, in_channels, img_size = prepare_datasets(cfg['dataset_name'])
@@ -199,10 +208,98 @@ def backdoorattack(arg):
         #     param.requires_grad = False
         # for param in model_bd.classifier[6].parameters():
         #     param.requires_grad = True
+
         for param in model_raw.parameters():
             param.requires_grad = False
         for param in model_raw.classifier[6].parameters():
             param.requires_grad = True
+    elif arg.arch=="resnet18_class10":
+        #imagenet10
+        model_bd = models.resnet18(pretrained=True)
+        model_raw = models.resnet18(pretrained=True)
+
+        # 修改全连接层
+        num_features = model_bd.fc.in_features
+        model_bd.fc = nn.Linear(num_features, 10)
+        model_raw.fc = nn.Linear(num_features, 10)
+
+        # 初始化新层参数
+        nn.init.kaiming_normal_(model_bd.fc.weight, mode='fan_in', nonlinearity='relu')
+        nn.init.constant_(model_bd.fc.bias, 0.0)
+        nn.init.kaiming_normal_(model_raw.fc.weight, mode='fan_in', nonlinearity='relu')
+        nn.init.constant_(model_raw.fc.bias, 0.0)
+
+        # 参数冻结策略
+        # for param in model_bd.parameters():
+        #     param.requires_grad = False
+        # for param in model_bd.fc.parameters():
+        #     param.requires_grad = True
+
+        for param in model_raw.parameters():
+            param.requires_grad = False
+        for param in model_raw.fc.parameters():
+            param.requires_grad = True
+    elif arg.arch=="resnet34_class10":
+        #imagenet10
+        model_bd = models.resnet34(pretrained=True)
+        model_raw = models.resnet34(pretrained=True)
+        # 修改全连接层
+        num_features = model_bd.fc.in_features
+        model_bd.fc = nn.Linear(num_features, 10)
+        model_raw.fc = nn.Linear(num_features, 10)
+
+        # 初始化新层参数
+        nn.init.kaiming_normal_(model_bd.fc.weight, mode='fan_in', nonlinearity='relu')
+        nn.init.constant_(model_bd.fc.bias, 0.0)
+        nn.init.kaiming_normal_(model_raw.fc.weight, mode='fan_in', nonlinearity='relu')
+        nn.init.constant_(model_raw.fc.bias, 0.0)
+
+        # 参数冻结策略
+        # for param in model_bd.parameters():
+        #     param.requires_grad = False
+        # for param in model_bd.fc.parameters():
+        #     param.requires_grad = True
+
+        for param in model_raw.parameters():
+            param.requires_grad = False
+        for param in model_raw.fc.parameters():
+            param.requires_grad = True
+    elif arg.arch=="resnet18_class43":
+
+
+        #gtsrb
+        model_bd = models.resnet18(pretrained=True)
+        model_raw = models.resnet18(pretrained=True)
+        # 修改第一层卷积：原kernel_size=7改为3，stride=2改为1
+        model_bd.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+        model_bd.fc = nn.Linear(512, 43)  # 调整输出层
+
+        model_raw.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+        model_raw.fc = nn.Linear(512, 43)  # 调整输出层
+
+        # 初始化新层参数
+        #迁移学习 因此提取原本的卷积核参数
+
+        original_model = models.resnet18(pretrained=True)
+        # 参数初始化关键步骤
+        with torch.no_grad():
+            # 截取原7x7卷积的中心3x3区域
+            original_weight = original_model.conv1.weight
+            center_slice = original_weight[:, :, 2:5, 2:5]  # 取中间3x3区域
+            model_bd.conv1.weight.copy_(center_slice)
+            model_raw.conv1.weight.copy_(center_slice)
+
+            # 保持BatchNorm层参数不变（重要！）
+            model_bd.bn1.load_state_dict(original_model.bn1.state_dict())
+            model_raw.bn1.load_state_dict(original_model.bn1.state_dict())
+
+        nn.init.kaiming_normal_(model_bd.fc.weight, mode='fan_in', nonlinearity='relu')
+        nn.init.constant_(model_bd.fc.bias, 0.0)
+        nn.init.kaiming_normal_(model_raw.fc.weight, mode='fan_in', nonlinearity='relu')
+        nn.init.constant_(model_raw.fc.bias, 0.0)
+
+
+
     elif arg.arch=="innervgg16":
         #imagenet10
         model_bd=VGG16_dense()
@@ -280,6 +377,23 @@ def backdoorattack(arg):
             cfg['weight'] = weight
             cfg['poisoned_transform_train_index']=2
             cfg['poisoned_transform_test_index']=2
+        elif cfg['dataset_name'] == 'GTRSB':
+            trigger_size = 5  # 更小的触发器尺寸以适应64x64分辨率
+            # 创建全0模板(3通道,64x64)
+            pattern = torch.zeros((3, 64, 64), dtype=torch.uint8)
+            # 在右下角放置黄色方块（交通标志中更显眼）
+            pattern[:, -trigger_size:, -trigger_size:] = 255
+
+            weight = torch.zeros((3, 64, 64), dtype=torch.float32)
+            weight[:, -trigger_size:, -trigger_size:] = 1.0
+
+            cfg['pattern'] = pattern
+            cfg['weight'] = weight
+            #这里的攻击索引要与图像预处理相互对应
+            cfg['poisoned_transform_train_index'] = 1  # 在Normalize前应用
+            cfg['poisoned_transform_test_index'] = 1
+
+
         else:  # 原有逻辑保持不变
             cfg['pattern'] = None
             cfg['weight'] = None
@@ -301,28 +415,94 @@ def backdoorattack(arg):
         })
     elif cfg['bd_type'] == 'WaNet':
         AttackMethod = WaNet
-        # 生成网格参数（需要根据论文实现具体计算）
-        if cfg['dataset_name'] == 'IMAGENET10':
-            cfg['identity_grid'] = torch.tensor(...)  # 实际需填充网格生成代码
-            cfg['noise_grid'] = torch.tensor(...)  # 实际需填充噪声生成代码
-        else:
-            pass
+        # 根据数据集初始化网格参数
+        if cfg['dataset_name'] == 'MNIST':
+            size=28
+            cfg['identity_grid'] = torch.zeros((1, size, size, 2), dtype=torch.float32)
+            cfg['noise_grid'] = torch.randn((1, size, size, 2)) * 0.1  # 示例噪声
+            cfg['poisoned_transform_train_index']=0
+            cfg['poisoned_transform_test_index']=0
+        elif cfg['dataset_name'] == 'CIFAR10':
+            size = 32
+            cfg['identity_grid'] = torch.zeros((1, size, size, 2), dtype=torch.float32)
+            cfg['noise_grid'] = torch.randn((1, size, size, 2)) * 0.1  # 示例噪声
+            cfg['poisoned_transform_train_index']=0
+            cfg['poisoned_transform_test_index']=0
+        elif cfg['dataset_name'] == 'IMAGENET10':
+            size = 224
+            cfg['identity_grid'] = torch.zeros((1, size, size, 2), dtype=torch.float32)
+            cfg['noise_grid'] = torch.randn((1, size, size, 2)) * 0.1  # 示例噪声
+            cfg['poisoned_transform_train_index']=2
+            cfg['poisoned_transform_test_index']=2
+        elif cfg['dataset_name'] == 'GTRSB':
+            size = 64
+            cfg['identity_grid'] = torch.zeros((1, size, size, 2), dtype=torch.float32)
+            cfg['noise_grid'] = torch.randn((1, size, size, 2)) * 0.1  # 示例噪声
+            cfg['poisoned_transform_train_index']=1
+            cfg['poisoned_transform_test_index']=1
+
         attack_params.update({
             'identity_grid': cfg['identity_grid'],
             'noise_grid': cfg['noise_grid'],
             'noise': cfg['noise'],
-            's': cfg['s'],
-            'grid_rescale': cfg['grid_rescale'],
+            #'s': cfg['s'],
+            #'grid_rescale': cfg['grid_rescale'],
+            'poisoned_transform_train_index': cfg['poisoned_transform_train_index'],
+            'poisoned_transform_test_index': cfg['poisoned_transform_test_index'],
             'schedule': schedule_base
         })
+        raw_params.update({
+            'identity_grid': cfg['identity_grid'],
+            'noise_grid': cfg['noise_grid'],
+            'noise': cfg['noise'],
+            # 's': cfg['s'],
+            # 'grid_rescale': cfg['grid_rescale'],
+            'poisoned_transform_train_index': cfg['poisoned_transform_train_index'],
+            'poisoned_transform_test_index': cfg['poisoned_transform_test_index'],
+            'schedule': schedule_base
+        })
+
     elif cfg['bd_type'] == 'Blended':
         AttackMethod = Blended
-        # 生成混合图案（示例为随机噪声）
-        cfg['pattern'] = torch.rand((3, cfg['img_size'], cfg['img_size']))
-        cfg['weight'] = torch.ones((3, cfg['img_size'], cfg['img_size'])) * cfg['alpha']
+
+        if cfg['dataset_name'] == 'MNIST':
+
+            cfg['poisoned_transform_train_index'] = 0
+            cfg['poisoned_transform_test_index'] = 0
+            cfg['pattern'] = torch.rand((1, cfg['img_size'], cfg['img_size']))
+            cfg['weight'] = torch.ones((1, cfg['img_size'], cfg['img_size'])) * 0.2
+        elif cfg['dataset_name'] == 'CIFAR10':
+
+            cfg['poisoned_transform_train_index'] = 0
+            cfg['poisoned_transform_test_index'] = 0
+            cfg['pattern'] = torch.rand((3, cfg['img_size'], cfg['img_size']))
+            cfg['weight'] = torch.ones((3, cfg['img_size'], cfg['img_size'])) * 0.2
+        elif cfg['dataset_name'] == 'IMAGENET10':
+
+            cfg['poisoned_transform_train_index'] = 2
+            cfg['poisoned_transform_test_index'] = 2
+            cfg['pattern'] = torch.rand((3, cfg['img_size'], cfg['img_size']))
+            cfg['weight'] = torch.ones((3, cfg['img_size'], cfg['img_size'])) * 0.2
+        elif cfg['dataset_name'] == 'GTRSB':
+
+            cfg['poisoned_transform_train_index'] = 1
+            cfg['poisoned_transform_test_index'] = 1
+
+            cfg['pattern'] = torch.rand((3, cfg['img_size'], cfg['img_size']))
+            cfg['weight'] = torch.ones((3, cfg['img_size'], cfg['img_size'])) * 0.2
+
         attack_params.update({
-            'alpha': cfg['alpha'],
-            'poisoned_transform_train_index': 1,  # 混合攻击需要更早的transform位置
+            'pattern': cfg['pattern'],
+            'weight': cfg['weight'],
+            'poisoned_transform_train_index': cfg['poisoned_transform_train_index'],
+            'poisoned_transform_test_index': cfg['poisoned_transform_test_index'],
+            'schedule': schedule_base
+        })
+        raw_params.update({
+            'pattern': cfg['pattern'],
+            'weight': cfg['weight'],
+            'poisoned_transform_train_index': cfg['poisoned_transform_train_index'],
+            'poisoned_transform_test_index': cfg['poisoned_transform_test_index'],
             'schedule': schedule_base
         })
     else:
@@ -405,8 +585,8 @@ def backdoorattack(arg):
     #     }
     # )
 
-    rawmodel_src_path= "transpace/vgg16std9913_raw.pth"
-    bdmodel_src_path= "transpace/vgg16std9556_bd.pth"
+    rawmodel_src_path= "transpace/IMAGENET10_stdvgg16_class10_WaNet_rawA0.pth"
+    bdmodel_src_path= "transpace/IMAGENET10_stdvgg16_class10_WaNet_bdA0.pth"
 
 
     if pretrain==True:

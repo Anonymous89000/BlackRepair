@@ -2,6 +2,13 @@ import argparse
 import sys
 
 args = None
+def str_to_bool(value):
+    if value.lower() in ("yes", "true", "t", "1"):
+        return True
+    elif value.lower() in ("no", "false", "f", "0"):
+        return False
+    else:
+        raise argparse.ArgumentTypeError("Boolean value expected.")
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="PyTorch Robust Repair",
@@ -24,14 +31,27 @@ def parse_arguments():
         "--bdtype", help="use which bd method", type=str, default="BadNets",
     )
     parser.add_argument(
-        "--pretrain", help="whether use pretrain parameter for backdoor model", type=bool, default=False,
+        "--adtype", help="use which ad method", type=str, default="PGD",
     )
     parser.add_argument(
-        "--train", help="whether train backdoor model", type=bool, default=False,
+        "--pretrain", help="whether use pretrain parameter for backdoor model", type=str_to_bool, default=False,
     )
     parser.add_argument(
-        "--saveRes", help="whether save backdoor model", type=bool, default=False,
+        "--train", help="whether train backdoor model", type=str_to_bool, default=False,
     )
+    parser.add_argument(
+        "--saveRes", help="whether save backdoor model", type=str_to_bool, default=False,
+    )
+    parser.add_argument(
+        "--pretrainfile", help="where to load pretrained model", type=str, default=None,
+    )
+    parser.add_argument(
+        "--includewrong", help="whether ", type=str_to_bool, default=False,
+    )
+    parser.add_argument(
+        "--advdataset", help="adversarial dataset ", type=str, default=None,
+    )
+
     args = parser.parse_args()
 
     return args
