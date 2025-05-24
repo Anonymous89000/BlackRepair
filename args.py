@@ -51,6 +51,13 @@ def parse_arguments():
     parser.add_argument(
         "--advdataset", help="adversarial dataset ", type=str, default=None,
     )
+    parser.add_argument(
+        "--savebdset", help="whether to save backdoored dataset ", type=str_to_bool, default=False,
+    )
+    parser.add_argument(
+        "--fldir", help="whether to save backdoored dataset ", type=str, default=None,
+    )
+
 
     args = parser.parse_args()
 

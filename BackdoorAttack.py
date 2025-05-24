@@ -1,3 +1,5 @@
+import time
+
 import torch
 import torch.nn as nn
 import torchvision
@@ -11,7 +13,7 @@ from model.inner_vgg import VGG16_dense
 from model.inner_vgg import VGG13_dense
 from torchvision import models
 from model.cnn import CNN6_CIFAR10,CNN6_MNIST
-
+import os
 #from utils.utils import pretrained
 
 
@@ -517,113 +519,99 @@ def backdoorattack(arg):
     # 初始化BadNets
     attacker=AttackMethod(**attack_params)
     rawtrainer=AttackMethod(**raw_params)
-    # attacker = AttackMethod(
-    #     train_dataset=train_dataset,
-    #     test_dataset=test_dataset,
-    #     model=model_bd,
-    #     loss=loss_bd,
-    #     y_target=cfg['target_class'],
-    #     poisoned_rate=cfg['poison_rate'],
-    #     pattern=cfg['pattern'],
-    #     weight=cfg['weight'],
-    #     poisoned_transform_train_index=cfg['poisoned_transform_train_index'],
-    #     poisoned_transform_test_index=cfg['poisoned_transform_test_index'],
-    #     poisoned_target_transform_index=cfg['poisoned_target_transform_index'],
-    #     schedule={
-    #         'device': cfg['device'],
-    #         'GPU_num': 1,
-    #         'benign_training': False,
-    #         'batch_size': cfg['batch_size'],
-    #         'num_workers': 4,
-    #         'lr': cfg['lr'],
-    #         'momentum': 0.9,
-    #         'weight_decay': 1e-4,
-    #         'gamma': 0.1,
-    #         'schedule': [int(cfg['epochs'] * 0.5), int(cfg['epochs'] * 0.75)],
-    #         'epochs': cfg['epochs'],
-    #         'log_iteration_interval': 100,
-    #         'test_epoch_interval': 5,
-    #         'save_epoch_interval': 10,
-    #         'save_dir': 'checkpoints_badnets',
-    #         'experiment_name': f'BadNets_{cfg["dataset_name"]}'
-    #     }
-    # )
-
-
-
-
-
-    # rawtrainer=AttackMethod(
-    #     train_dataset=train_dataset,
-    #     test_dataset=test_dataset,
-    #     model=model_raw,
-    #     loss=loss_raw,
-    #     y_target=cfg['target_class'],
-    #     poisoned_rate=0,
-    #     pattern=cfg['pattern'],
-    #     weight=cfg['weight'],
-    #     poisoned_transform_train_index=cfg['poisoned_transform_train_index'],
-    #     poisoned_transform_test_index=cfg['poisoned_transform_test_index'],
-    #     poisoned_target_transform_index=cfg['poisoned_target_transform_index'],
-    #     schedule={
-    #         'device': cfg['device'],
-    #         'GPU_num': 1,
-    #         'benign_training': False,
-    #         'batch_size': cfg['batch_size'],
-    #         'num_workers': 4,
-    #         'lr': cfg['lr'],
-    #         'momentum': 0.9,
-    #         'weight_decay': 1e-4,
-    #         'gamma': 0.1,
-    #         'schedule': [int(cfg['epochs'] * 0.5), int(cfg['epochs'] * 0.75)],
-    #         'epochs': cfg['epochs'],
-    #         'log_iteration_interval': 100,
-    #         'test_epoch_interval': 5,
-    #         'save_epoch_interval': 10,
-    #         'save_dir': 'checkpoints_badnets',
-    #         'experiment_name': f'BadNets_{cfg["dataset_name"]}'
-    #     }
-    # )
 
     rawmodel_src_path= "transpace/IMAGENET10_stdvgg16_class10_WaNet_rawA0.pth"
     bdmodel_src_path= "transpace/IMAGENET10_stdvgg16_class10_WaNet_bdA0.pth"
-
-
     if pretrain==True:
         rawtrainer.model.load_state_dict(torch.load(rawmodel_src_path))
         attacker.model.load_state_dict(torch.load(bdmodel_src_path))
-
-
     if train==True:
         print(f"Training rawnet on {cfg['dataset_name']}...")
         rawtrainer.train()
-
         # 训练
         print(f"Training bdnet on {cfg['dataset_name']}...")
         attacker.train()
-
-
-
     # 测试
     print("\nTesting rawnet on clean data and poisoned data:")
     rc,rp=rawtrainer.test(test_dataset=attacker.test_dataset,poisoned_test_dataset=attacker.poisoned_test_dataset)
-
+    start=time.time()
     print("\nTesting bdnet on clean data and poisoned data:")
     bc,bp=attacker.test(test_dataset=attacker.test_dataset,poisoned_test_dataset=attacker.poisoned_test_dataset)
+    end = time.time()
+    print("单次计算准确率用时:", (end - start))
 
     print("Extended Result: bc~rc  bp>>rp")
     print(f"rc:{rc}  bc:{bc}\nrp:{rp} bp:{bp}")
 
-
     # rawmodel_tar_path= "transpace/vgg16std_raw.pth"
     # bdmodel_tar_path= "transpace/vgg16std_bd.pth"
-
     rawmodel_tar_path= f"transpace/{arg.set}_{arg.arch}_{arg.bdtype}_raw.pth"
     bdmodel_tar_path= f"transpace/{arg.set}_{arg.arch}_{arg.bdtype}_bd.pth"
-
     if saveRes==True:
         torch.save(rawtrainer.model.state_dict(), rawmodel_tar_path)
         torch.save(attacker.model.state_dict(),bdmodel_tar_path)
+
+    if arg.savebdset==True:
+        poisioned_data_saveroot = f"./data/poisoned_{arg.set}_{arg.arch}_{arg.bdtype}"
+        clean_data_saveroot = f"./data/clean_{arg.set}_{arg.arch}_{arg.bdtype}"
+        # 创建总保存目录
+        os.makedirs(poisioned_data_saveroot, exist_ok=True)
+        os.makedirs(clean_data_saveroot, exist_ok=True)
+
+        # 根据数据集配置反标准化参数
+        dataset_name = cfg['dataset_name']
+        if dataset_name == 'IMAGENET10':
+            mean = [0.485, 0.456, 0.406]
+            std = [0.229, 0.224, 0.225]
+        elif dataset_name == 'CIFAR10':
+            mean = [0.4914, 0.4822, 0.4465]
+            std = [0.2023, 0.1994, 0.2010]
+        elif dataset_name == 'MNIST':
+            mean = [0.1307]
+            std = [0.3081]
+        else:
+            raise ValueError("Unsupported dataset for saving images")
+        # 遍历所有样本
+        for idx in range(len(attacker.test_dataset)):
+            # 获取原始样本的true label
+            # true_label = attacker.test_dataset[idx][1]  # 原始测试集的真实标签
+
+            # 获取干净图像
+            clean_img, true_label = attacker.test_dataset[idx]
+
+            # 获取毒化样本图像
+            poisoned_img, _ = attacker.poisoned_test_dataset[idx]  # 忽略毒化数据集的标签
+
+            # 创建按true label分类的目录
+            poisoned_class_dir = os.path.join(poisioned_data_saveroot, f'true_class_{true_label}')
+            os.makedirs(poisoned_class_dir, exist_ok=True)
+
+            clean_class_dir = os.path.join(clean_data_saveroot, f'true_class_{true_label}')
+            os.makedirs(clean_class_dir, exist_ok=True)
+            # 反标准化处理
+
+            img = poisoned_img.clone().detach()
+            for t in range(img.shape[0]):
+                img[t] = img[t] * std[t] + mean[t]
+
+            img1 = clean_img.clone().detach()
+            for t in range(img.shape[0]):
+                img1[t] = img1[t] * std[t] + mean[t]
+
+            # 生成文件名
+            filename = f'poisoned_{idx}_true_{true_label}_target_{cfg["target_class"]}.png'
+            save_path = os.path.join(poisoned_class_dir, filename)
+            img = torch.clamp(img, 0.0, 1.0)  # <-- 关键补充步骤
+            # 保存图像（禁用自动归一化）
+            torchvision.utils.save_image(img, save_path, normalize=False)
+
+            # 生成文件名
+            filename = f'clean_{idx}_true_{true_label}_target_{cfg["target_class"]}.png'
+            save_path = os.path.join(clean_class_dir, filename)
+            img1 = torch.clamp(img1, 0.0, 1.0)  # <-- 关键补充步骤
+            # 保存图像（禁用自动归一化）
+            torchvision.utils.save_image(img1, save_path, normalize=False)
+
 
 
 if __name__=="__main__":

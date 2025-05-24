@@ -143,7 +143,7 @@ if __name__ == '__main__':
     CONFIG['img_size'] = img_size  # 更新配置
     # 加载被感染的模型
     model = FlexibleCNN().to(device)
-    model.load_state_dict(torch.load(DEFENSE_CONFIG['model_path'], map_location=device))
+    #model.load_state_dict(torch.load(DEFENSE_CONFIG['model_path'], map_location=device))
     model.eval()
 
 
@@ -175,6 +175,7 @@ if __name__ == '__main__':
     print(f"攻击后准确率: {raw_poison_acc:.2f}%")
 
 
+    print(modifier.total_dims)
     # RACOS优化配置
     dim = Dimension(modifier.total_dims, [DEFENSE_CONFIG['param_range']] * modifier.total_dims,
                     [True] * modifier.total_dims)
