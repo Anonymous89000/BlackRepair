@@ -22,6 +22,25 @@ def parse_arguments():
         "--gpu", help="use which gpu", type=int, default=0,
     )
     parser.add_argument(
+        "--batch_size", help="batch_size", type=int, default=32,
+    )
+    parser.add_argument(
+        "--epochs", help="epochs", type=int, default=20,
+    )
+    parser.add_argument(
+        "--lr", help="lr", type=float, default=0.001,
+    )
+    parser.add_argument(
+        "--save_dir", help="trainsavedir", type=str, default='trainsave',
+    )
+    parser.add_argument(
+        "--optimizer", help="optimizer", type=str, default='SGD',
+    )
+    parser.add_argument(
+        "--scheduler", help="scheduler", type=str, default='StepLR',
+    )
+
+    parser.add_argument(
         "--set", help="use which dataset", type=str, default="IMAGENET10",
     )
     parser.add_argument(
@@ -57,7 +76,9 @@ def parse_arguments():
     parser.add_argument(
         "--fldir", help="whether to save backdoored dataset ", type=str, default=None,
     )
-
+    parser.add_argument(
+        "--onlybd", help="whether to train rawmodel dataset ", type=str_to_bool, default=True,
+    )
 
     args = parser.parse_args()
 

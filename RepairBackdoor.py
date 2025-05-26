@@ -79,7 +79,10 @@ class Evaluator:
         self.device = device
         self.acc_clean_raw=100
         self.acc_poison_raw=100
-
+        self.stepcount=0
+        self.steppoint=0
+        self.asr_target_from_stage1=0
+        self.acc_clean_at_start_of_stage2=0
     def acc(self, model, loader):
         model.eval()
         correct, total = 0, 0
@@ -92,12 +95,37 @@ class Evaluator:
         return correct / total * 100
 
     def scoreCompute1(self,acc_clean,acc_poison):
-        return -(-2*(self.acc_clean_raw-acc_clean)+(self.acc_poison_raw-acc_poison))
+        return -(-2*(self.acc_clean_raw-acc_clean)+(self.acc_poison_raw-acc_poison))+100
 
     def scoreCompute2(self, acc_clean, acc_poison):
-        return -(-0.5*max(0,self.acc_clean_raw-acc_clean)**2+(self.acc_poison_raw-acc_poison))
+
+
+        return -(-0.05*max(0,self.acc_clean_raw-acc_clean)**2+2*(self.acc_poison_raw-acc_poison))
 
     def scoreCompute3(self, acc_clean, acc_poison):
+        self.stepcount+=1
+        if self.stepcount<=10:
+            objective_to_maximize = 2.0 * (self.acc_poison_raw - acc_poison) - 0.1 * max(0,self.acc_clean_raw - acc_clean)  # 轻微惩罚CA下降
+            self.asr_target_from_stage1 = acc_poison
+            self.acc_clean_at_start_of_stage2 = acc_clean
+            self.steppoint=-objective_to_maximize
+            return -objective_to_maximize
+        elif self.stepcount>10:
+            asr_rebound_penalty_factor = 2.0  # 对ASR反弹的惩罚系数
+            ca_recovery_benefit_factor = 5.0  # 对CA恢复的奖励系数
+            # 计算ASR反弹的惩罚
+            asr_rebound = max(0, acc_poison - self.asr_target_from_stage1)  # ASR比目标值高了多少
+            asr_penalty = -asr_rebound_penalty_factor * asr_rebound   # 平方惩罚ASR反弹
+            # 计算CA恢复的奖励 (或者与原始CA的差距的惩罚减小)
+            # 我们希望最大化 acc_clean，或者最小化 acc_clean_raw - acc_clean
+            # 这里我们最大化 (acc_clean - acc_clean_at_start_of_stage2)
+            # 或者，更简单地，直接用一个强调CA的目标，同时惩罚ASR
+            # objective_to_maximize = 1.5 * acc_clean - 2.0 * max(0, acc_poison - (asr_target_from_stage1 + 5)) # 允许ASR比stage1结果高5%
+            objective_to_maximize = ca_recovery_benefit_factor * (acc_clean - self.acc_clean_at_start_of_stage2) + asr_penalty
+            return -objective_to_maximize+self.steppoint
+        else:
+            pass
+
 
         return 0
 
@@ -109,7 +137,7 @@ class Evaluator:
         acc_poison = self.acc(modified_model, self.poison_loader)
         score = self.scoreCompute2(acc_clean,acc_poison)
         end=time.time()
-        print(f"单次评估用时:{(end-start)} score:{score}")
+        print(f"单次评估用时:{(end-start)} score:{score} acc_clean:{acc_clean} acc_poison:{acc_poison}")
         return score
     def evaluateRes(self, solution):
         model_copy = copy.deepcopy(self.base_model)
@@ -125,6 +153,35 @@ def select_important_parameters(targets, top_k=10):
     selected_targets = sorted_targets[:top_k]  # 选择前top_k个重要的参数
     return selected_targets
 
+
+def generate_initial_samples(dim, num_samples=10, distribution='uniform', low=-1, high=1):
+    """
+    生成初始样本，返回符合给定维度和分布的样本。
+
+    Parameters:
+        dim (int): 每个样本的维度。
+        num_samples (int): 初始样本数量，默认生成10个样本。
+        distribution (str): 生成样本的分布类型 ('uniform' 或 'normal')。默认为 'uniform'。
+        low (float): 均匀分布的下界，默认为 -1。
+        high (float): 均匀分布的上界，默认为 1。
+
+    Returns:
+        np.ndarray: 生成的初始样本集。
+    """
+    if distribution == 'uniform':
+        # 在 [low, high] 范围内生成均匀分布的样本
+        init_samples = np.random.uniform(low=low, high=high, size=(num_samples, dim))
+    elif distribution == 'normal':
+        # 使用正态分布生成样本，均值为0，标准差为1
+        init_samples = np.random.normal(loc=0.0, scale=1.0, size=(num_samples, dim))
+    else:
+        raise ValueError("Unsupported distribution type. Use 'uniform' or 'normal'.")
+
+    return init_samples
+
+def worker_init_fn(worker_id):
+    np.random.seed(worker_id)  # 设置每个 worker 使用不同的随机种子
+
 def repairbackdoor(arg):
     print("[INFO] Starting backdoor repair using RACOS...")
 
@@ -137,9 +194,9 @@ def repairbackdoor(arg):
     _, test_dataset, _, img_size = prepare_datasets(arg.set)
     CONFIG['img_size'] = img_size
     batch_size_use=32
-    num_workers=2
-    delta_bound=3
-    clean_loader = DataLoader(test_dataset, batch_size=batch_size_use, shuffle=False,num_workers=num_workers)
+    num_workers=0
+    delta_bound=2
+    clean_loader = DataLoader(test_dataset, batch_size=batch_size_use, shuffle=False,num_workers=num_workers,pin_memory=True,worker_init_fn=worker_init_fn)
 
     # === Determine transform for poisoned data to match clean data ===
     transform_list = []
@@ -147,8 +204,8 @@ def repairbackdoor(arg):
         transform_list.append(transforms.ToTensor())
     elif arg.set == 'IMAGENET10':
         transform_list.extend([
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
+            # transforms.Resize(256),
+            # transforms.CenterCrop(224),
             transforms.ToTensor()
         ])
     elif arg.set == 'GTRSB':
@@ -171,13 +228,17 @@ def repairbackdoor(arg):
 
     transform_list.append(transforms.Normalize(mean, std))
 
-    poison_dir = f"data/poisoned_{arg.set}_{arg.arch}_{arg.bdtype}"
+    poison_dir = f"data/poisonedval_{arg.set}_{arg.arch}_{arg.bdtype}"
     poison_dataset = datasets.ImageFolder(poison_dir, transform=transforms.Compose(transform_list))
-    poison_loader = DataLoader(poison_dataset, batch_size=batch_size_use, shuffle=False,num_workers=num_workers)
+    poison_loader = DataLoader(poison_dataset, batch_size=batch_size_use, shuffle=False,num_workers=num_workers,pin_memory=True,worker_init_fn=worker_init_fn)
 
     # === Load model ===
     print("[INFO] Loading backdoored model...")
     model_path = f"transpace/{arg.set}_{arg.arch}_{arg.bdtype}_bd.pth"
+
+    if arg.pretrainfile!=None:
+        model_path=arg.pretrainfile
+
     if arg.arch == 'stdvgg16_class10':
         model = models.vgg16(pretrained=True)
         model.classifier[6] = nn.Linear(model.classifier[6].in_features, 10)
@@ -249,7 +310,7 @@ def repairbackdoor(arg):
                     targets_fc.append((layer_type, layer_idx, neuron, importance))
 
     selected_targets_conv = select_important_parameters(targets_conv, top_k=len(targets_conv))  # 选择重要性最高的10个参数
-    selected_targets_fc = select_important_parameters(targets_fc, top_k=2)  # 选择重要性最高的10个参数
+    selected_targets_fc = select_important_parameters(targets_fc, top_k=len(targets_fc))  # 选择重要性最高的10个参数
 
     targets=[]
     targets=selected_targets_fc+selected_targets_conv
@@ -271,10 +332,12 @@ def repairbackdoor(arg):
 
     evaluator = Evaluator(model, modifier, clean_loader, poison_loader, device)
     evaluator.acc_clean_raw, evaluator.acc_poison_raw = evaluator.evaluateRes(np.zeros(modifier.totaldim))
-
+    print(f"acc_clean_raw:{evaluator.acc_clean_raw},acc_poison_raw:{evaluator.acc_poison_raw}")
     dim = Dimension(modifier.totaldim, [[-delta_bound, delta_bound]] * modifier.totaldim, [True] * modifier.totaldim)
     obj = Objective(lambda sol: evaluator.evaluate(sol.get_x()), dim)
-    param = Parameter(budget=20, init_samples=[np.zeros(modifier.totaldim)])
+    num_samples=10
+    init_samples = generate_initial_samples(modifier.totaldim, num_samples, distribution='uniform')
+    param = Parameter(budget=1000, init_samples=[np.zeros(modifier.totaldim)])
 
     opt = Opt()
 
@@ -287,6 +350,6 @@ def repairbackdoor(arg):
 
     print(list(best.get_x()))
     acc_clean_rep, acc_poison_rep=evaluator.evaluateRes(best.get_x())
-    print(f"acc_clean_raw:{evaluator.acc_clean_raw} acc_poison_rep:{evaluator.acc_poison_raw}")
+    print(f"acc_clean_raw:{evaluator.acc_clean_raw} acc_poison_raw:{evaluator.acc_poison_raw}")
     print(f"acc_clean_repaired:{acc_clean_rep} acc_poison_repaired:{acc_poison_rep}")
     print(f"[✔] Repair completed. Model saved to {save_path}")

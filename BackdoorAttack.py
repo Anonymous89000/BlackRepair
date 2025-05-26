@@ -1,8 +1,10 @@
 import time
+from time import sleep
 
 import torch
 import torch.nn as nn
 import torchvision
+from PIL.ImageChops import offset
 from torchvision import transforms  # <-- 添加这行
 from torchvision.transforms import Compose, ToTensor, Normalize
 from attacks.BadNets import BadNets
@@ -15,7 +17,9 @@ from torchvision import models
 from model.cnn import CNN6_CIFAR10,CNN6_MNIST
 import os
 #from utils.utils import pretrained
-
+import matplotlib.pyplot as plt
+import numpy as np
+from PIL import Image, ImageDraw, ImageFont
 
 # 新增后门攻击参数池
 BACKDOOR_PARAMS = {
@@ -50,7 +54,7 @@ CONFIG = {
     'architecture':'stdvgg16_class10',
     'bd_type':'BadNets',
     'target_class': 0,  # 攻击目标类别
-    'poison_rate': 0.1,  # 训练集投毒比例
+    'poison_rate': 0.9,  # 训练集投毒比例
     'batch_size': 32,
     'pattern':None,
     'weight':None,
@@ -168,6 +172,105 @@ def prepare_datasets(dataset_name):
 
     return train_dataset, test_dataset, in_channels, img_size
 
+def generate_identity_grid(size):
+    """
+    生成用于WANET的identity_grid，保证经过grid_sample后图像不发生变化。
+    size：图像的大小 (size x size)
+    返回：shape 为 (1, size, size, 2) 的标准化网格
+    """
+    # 创建网格坐标（行，列）
+    grid_y, grid_x = torch.meshgrid(torch.linspace(0, size-1, size), torch.linspace(0, size-1, size))
+
+    # 将坐标标准化到 [-1, 1] 范围
+    grid_x = 2 * grid_x / (size - 1) - 1  # 列坐标的标准化
+    grid_y = 2 * grid_y / (size - 1) - 1  # 行坐标的标准化
+
+    # 将标准化后的坐标堆叠成一个 4D grid，形状为 (size, size, 2)
+    identity_grid = torch.stack([grid_x, grid_y], dim=-1)  # shape: (size, size, 2)
+
+    # 扩展成 4D 张量，形状为 (1, size, size, 2)
+    identity_grid = identity_grid.unsqueeze(0)  # shape: (1, size, size, 2)
+    print(identity_grid.shape)
+
+    return identity_grid
+
+
+def generate_watermark_trigger(size, type="gradient"):
+    """
+    生成不同类型的水印触发器，用于Blended攻击。
+
+    参数：
+        size: 触发器的大小 (size x size)
+        type: 水印类型，可选 "gradient"（渐变矩形）、"noise"（随机噪声）、"text"（文字水印）
+
+    返回：
+        pattern: 生成的水印触发器 (size, size)
+        weight: 权重矩阵，控制水印对图像的影响 (size, size)
+    """
+
+    # 默认使用全零图案
+    pattern = torch.zeros((size, size), dtype=torch.float32)  # 改为 (size, size)
+    weight = torch.zeros((size, size), dtype=torch.float32)  # 改为 (size, size)
+
+    # 根据 type 选择水印类型
+    if type == "gradient":
+        # 渐变矩形水印：左上到右下的渐变
+        for i in range(size):
+            for j in range(size):
+                # 生成渐变效果
+                pattern[i, j] = (i / (size - 1) + j / (size - 1)) / 2  # 平均值形成渐变
+                weight[i, j] = 1.0 - pattern[i, j]  # 反向控制权重，使得透明部分权重低
+    elif type == "noise":
+        # 随机噪声水印：生成随机噪声图案
+        pattern = torch.rand((size, size), dtype=torch.float32)
+        weight = torch.ones((size, size), dtype=torch.float32)  # 全部权重为1
+    elif type == "text":
+        # 文字水印：生成包含文字的水印图案
+        # 创建一个白色背景的图像，大小为 size x size
+        img = Image.new('L', (size, size), color=255)  # 'L' 模式表示灰度图，背景设为白色
+        draw = ImageDraw.Draw(img)
+        font = ImageFont.load_default()  # 使用默认字体
+        text_scale=0.3
+        # 计算文字的尺寸并根据 text_scale 调整大小
+        text = "WA"  # 文字水印内容
+        font_size = int(size * text_scale)  # 根据 text_scale 调整字体大小
+
+        if font_size<=10:
+            font_size=10
+        elif font_size>=72:
+            font_size=72
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", font_size)  # 使用较大的字体
+        # except IOError:
+        #     font = ImageFont.load_default()  # 如果找不到字体，则使用默认字体
+
+        # 计算文字的尺寸并居中显示
+        text_width, text_height = draw.textsize(text, font=font)
+        text_position = ((size - text_width) // 2, (size - text_height) // 2)  # 居中显示文字
+
+        # 使用黑色填充文字
+        draw.text(text_position, text, fill=0, font=font)  # 文字颜色为黑色
+
+        # 将生成的文字水印转换为张量
+        pattern = torch.tensor(np.array(img), dtype=torch.float32) / 255  # 归一化到 [0, 1]
+
+        # 为了只在文字部分影响图像，生成权重矩阵
+        weight = torch.zeros((size, size), dtype=torch.float32)  # 初始化权重为 0
+        # 文字部分的区域设置为 1，表示影响图像
+        for i in range(size):
+            for j in range(size):
+                if pattern[i, j] > 0:  # 如果在部分
+                    weight[i, j] = 0.0  # 设置权重为 1
+                else:
+                    weight[i,j]=1.0
+
+
+    else:
+        raise ValueError("Unsupported watermark type. Choose from 'gradient', 'noise', 'text'.")
+
+
+
+    return pattern, weight
+
 
 # 主流程
 def backdoorattack(arg):
@@ -190,6 +293,8 @@ def backdoorattack(arg):
 
     #选择模型
     if arg.arch=='stdvgg16_class10':
+        # model_bd=models.vgg16(pretrained=True)
+        # model_raw=models.vgg16(pretrained=True)
         model_bd=models.vgg16(pretrained=True)
         model_raw=models.vgg16(pretrained=True)
         num_features = model_bd.classifier[6].in_features  # 获取原层输入维度
@@ -367,10 +472,11 @@ def backdoorattack(arg):
         AttackMethod = BadNets
         if cfg['dataset_name'] == 'IMAGENET10':
             trigger_size = 20
+            offset=-1
             # 创建全0模板
             pattern = torch.zeros((3, 224, 224), dtype=torch.uint8)
             # 在右下角放白色方块
-            pattern[:, -trigger_size:, -trigger_size:] = 255
+            pattern[:, -trigger_size+offset:offset, -trigger_size+offset:offset] = 255
 
             weight = torch.zeros((3, 224, 224), dtype=torch.float32)
             weight[:, -trigger_size:, -trigger_size:] = 1.0
@@ -420,26 +526,32 @@ def backdoorattack(arg):
         # 根据数据集初始化网格参数
         if cfg['dataset_name'] == 'MNIST':
             size=28
-            cfg['identity_grid'] = torch.zeros((1, size, size, 2), dtype=torch.float32)
-            cfg['noise_grid'] = torch.randn((1, size, size, 2)) * 0.1  # 示例噪声
+            s = 0.02
+            cfg['identity_grid'] = generate_identity_grid(size)
+            cfg['noise_grid'] = torch.randn((1, size, size, 2)) * s * size  # 示例噪声
             cfg['poisoned_transform_train_index']=0
             cfg['poisoned_transform_test_index']=0
         elif cfg['dataset_name'] == 'CIFAR10':
             size = 32
-            cfg['identity_grid'] = torch.zeros((1, size, size, 2), dtype=torch.float32)
-            cfg['noise_grid'] = torch.randn((1, size, size, 2)) * 0.1  # 示例噪声
+            s = 0.02
+            cfg['identity_grid'] = generate_identity_grid(size)
+            cfg['noise_grid'] = torch.randn((1, size, size, 2)) * s * size  # 示例噪声
             cfg['poisoned_transform_train_index']=0
             cfg['poisoned_transform_test_index']=0
         elif cfg['dataset_name'] == 'IMAGENET10':
             size = 224
+            s=0.02
+            #0.01-0.1
             cfg['identity_grid'] = torch.zeros((1, size, size, 2), dtype=torch.float32)
-            cfg['noise_grid'] = torch.randn((1, size, size, 2)) * 0.1  # 示例噪声
+            cfg['identity_grid']=generate_identity_grid(size)
+            cfg['noise_grid'] = torch.randn((1, size, size, 2))*s*size  # 示例噪声
             cfg['poisoned_transform_train_index']=2
             cfg['poisoned_transform_test_index']=2
         elif cfg['dataset_name'] == 'GTRSB':
             size = 64
-            cfg['identity_grid'] = torch.zeros((1, size, size, 2), dtype=torch.float32)
-            cfg['noise_grid'] = torch.randn((1, size, size, 2)) * 0.1  # 示例噪声
+            s = 0.02
+            cfg['identity_grid'] = generate_identity_grid(size)
+            cfg['noise_grid'] = torch.randn((1, size, size, 2)) * s * size  # 示例噪声
             cfg['poisoned_transform_train_index']=1
             cfg['poisoned_transform_test_index']=1
 
@@ -457,7 +569,7 @@ def backdoorattack(arg):
             'identity_grid': cfg['identity_grid'],
             'noise_grid': cfg['noise_grid'],
             'noise': cfg['noise'],
-            # 's': cfg['s'],
+            #'s': cfg['s'],
             # 'grid_rescale': cfg['grid_rescale'],
             'poisoned_transform_train_index': cfg['poisoned_transform_train_index'],
             'poisoned_transform_test_index': cfg['poisoned_transform_test_index'],
@@ -468,11 +580,12 @@ def backdoorattack(arg):
         AttackMethod = Blended
 
         if cfg['dataset_name'] == 'MNIST':
-
+            size=28
             cfg['poisoned_transform_train_index'] = 0
             cfg['poisoned_transform_test_index'] = 0
-            cfg['pattern'] = torch.rand((1, cfg['img_size'], cfg['img_size']))
-            cfg['weight'] = torch.ones((1, cfg['img_size'], cfg['img_size'])) * 0.2
+            watermark_type = "gradient"  # 可选 "gradient", "noise", "text"
+            pattern, weight = generate_watermark_trigger(size, type=watermark_type)
+
         elif cfg['dataset_name'] == 'CIFAR10':
 
             cfg['poisoned_transform_train_index'] = 0
@@ -480,11 +593,14 @@ def backdoorattack(arg):
             cfg['pattern'] = torch.rand((3, cfg['img_size'], cfg['img_size']))
             cfg['weight'] = torch.ones((3, cfg['img_size'], cfg['img_size'])) * 0.2
         elif cfg['dataset_name'] == 'IMAGENET10':
-
+            size=224
+            s=0.3
             cfg['poisoned_transform_train_index'] = 2
             cfg['poisoned_transform_test_index'] = 2
-            cfg['pattern'] = torch.rand((3, cfg['img_size'], cfg['img_size']))
-            cfg['weight'] = torch.ones((3, cfg['img_size'], cfg['img_size'])) * 0.2
+            watermark_type = "text"  # 可选 "gradient", "noise", "text"
+            pattern, weight = generate_watermark_trigger(size, type=watermark_type)
+            cfg['pattern'] =pattern
+            cfg['weight'] =weight*s
         elif cfg['dataset_name'] == 'GTRSB':
 
             cfg['poisoned_transform_train_index'] = 1
@@ -520,25 +636,34 @@ def backdoorattack(arg):
     attacker=AttackMethod(**attack_params)
     rawtrainer=AttackMethod(**raw_params)
 
-    rawmodel_src_path= "transpace/IMAGENET10_stdvgg16_class10_WaNet_rawA0.pth"
-    bdmodel_src_path= "transpace/IMAGENET10_stdvgg16_class10_WaNet_bdA0.pth"
+    # rawmodel_src_path= "transpace/IMAGENET10_stdvgg16_class10_WaNet_rawA0.pth"
+    # bdmodel_src_path= "transpace/IMAGENET10_stdvgg16_class10_WaNet_bdA0.pth"
+    rawmodel_src_path= "transpace/IMAGENET10_stdvgg16_class10_BadNets_raw9913.pth"
+    bdmodel_src_path= "transpace/IMAGENET10_stdvgg16_class10_BadNets_raw9913.pth"
     if pretrain==True:
         rawtrainer.model.load_state_dict(torch.load(rawmodel_src_path))
         attacker.model.load_state_dict(torch.load(bdmodel_src_path))
+
+    if arg.pretrainfile!=None:
+        rawtrainer.model.load_state_dict(torch.load(arg.pretrainfile))
+        attacker.model.load_state_dict(torch.load(arg.pretrainfile))
+
     if train==True:
-        print(f"Training rawnet on {cfg['dataset_name']}...")
-        rawtrainer.train()
+        if arg.onlybd == False:
+            print(f"Training rawnet on {cfg['dataset_name']}...")
+            rawtrainer.train()
         # 训练
         print(f"Training bdnet on {cfg['dataset_name']}...")
         attacker.train()
     # 测试
+
     print("\nTesting rawnet on clean data and poisoned data:")
     rc,rp=rawtrainer.test(test_dataset=attacker.test_dataset,poisoned_test_dataset=attacker.poisoned_test_dataset)
-    start=time.time()
+
+
     print("\nTesting bdnet on clean data and poisoned data:")
     bc,bp=attacker.test(test_dataset=attacker.test_dataset,poisoned_test_dataset=attacker.poisoned_test_dataset)
-    end = time.time()
-    print("单次计算准确率用时:", (end - start))
+
 
     print("Extended Result: bc~rc  bp>>rp")
     print(f"rc:{rc}  bc:{bc}\nrp:{rp} bp:{bp}")
@@ -548,12 +673,15 @@ def backdoorattack(arg):
     rawmodel_tar_path= f"transpace/{arg.set}_{arg.arch}_{arg.bdtype}_raw.pth"
     bdmodel_tar_path= f"transpace/{arg.set}_{arg.arch}_{arg.bdtype}_bd.pth"
     if saveRes==True:
-        torch.save(rawtrainer.model.state_dict(), rawmodel_tar_path)
+        if arg.onlybd==False:
+            torch.save(rawtrainer.model.state_dict(), rawmodel_tar_path)
         torch.save(attacker.model.state_dict(),bdmodel_tar_path)
 
     if arg.savebdset==True:
-        poisioned_data_saveroot = f"./data/poisoned_{arg.set}_{arg.arch}_{arg.bdtype}"
-        clean_data_saveroot = f"./data/clean_{arg.set}_{arg.arch}_{arg.bdtype}"
+        # poisioned_data_saveroot = f"./data/poisonedtrain_{arg.set}_{arg.arch}_{arg.bdtype}"
+        # clean_data_saveroot = f"./data/cleantrain_{arg.set}_{arg.arch}_{arg.bdtype}"
+        poisioned_data_saveroot = f"./data/poisonedval_{arg.set}_{arg.arch}_{arg.bdtype}"
+        clean_data_saveroot = f"./data/cleanval_{arg.set}_{arg.arch}_{arg.bdtype}"
         # 创建总保存目录
         os.makedirs(poisioned_data_saveroot, exist_ok=True)
         os.makedirs(clean_data_saveroot, exist_ok=True)
@@ -572,15 +700,16 @@ def backdoorattack(arg):
         else:
             raise ValueError("Unsupported dataset for saving images")
         # 遍历所有样本
+
         for idx in range(len(attacker.test_dataset)):
-            # 获取原始样本的true label
-            # true_label = attacker.test_dataset[idx][1]  # 原始测试集的真实标签
+        #for idx in range(len(attacker.train_dataset)):
 
             # 获取干净图像
             clean_img, true_label = attacker.test_dataset[idx]
 
             # 获取毒化样本图像
             poisoned_img, _ = attacker.poisoned_test_dataset[idx]  # 忽略毒化数据集的标签
+            #poisoned_img, _ = attacker.poisoned_train_dataset[idx]  # 忽略毒化数据集的标签
 
             # 创建按true label分类的目录
             poisoned_class_dir = os.path.join(poisioned_data_saveroot, f'true_class_{true_label}')
@@ -610,7 +739,8 @@ def backdoorattack(arg):
             save_path = os.path.join(clean_class_dir, filename)
             img1 = torch.clamp(img1, 0.0, 1.0)  # <-- 关键补充步骤
             # 保存图像（禁用自动归一化）
-            torchvision.utils.save_image(img1, save_path, normalize=False)
+            #torchvision.utils.save_image(img1, save_path, normalize=False)
+
 
 
 
