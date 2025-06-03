@@ -206,13 +206,14 @@ class Base(object):
                     brk=brk+1
                 loss.backward()
 
-                params_group = [
-                    {"name":"features",'params': self.model.features.parameters(), 'max_norm': 10.0},
-                    {"name":"classifier",'params': self.model.classifier.parameters(), 'max_norm': 5.0}
-                ]
-                for group in params_group:
-                    total_norm=torch.nn.utils.clip_grad_norm_(group['params'], group['max_norm'],norm_type=2)
-                    #print(f"{group['name']} Gradient norm before clipping: {total_norm.item()}")
+                if 0:
+                    params_group = [
+                        {"name":"features",'params': self.model.features.parameters(), 'max_norm': 10.0},
+                        {"name":"classifier",'params': self.model.classifier.parameters(), 'max_norm': 5.0}
+                    ]
+                    for group in params_group:
+                        total_norm=torch.nn.utils.clip_grad_norm_(group['params'], group['max_norm'],norm_type=2)
+                        #print(f"{group['name']} Gradient norm before clipping: {total_norm.item()}")
 
 
 
@@ -227,7 +228,7 @@ class Base(object):
                     last_time = time.time()
                     log(msg)
 
-            if (i + 1) % self.current_schedule['test_epoch_interval'] == 0 or 1:
+            if (i + 1) % self.current_schedule['test_epoch_interval'] == 0:
                 # test result on benign test dataset
                 predict_digits, labels = self._test(self.test_dataset, device, self.current_schedule['batch_size'],
                                                     self.current_schedule['num_workers'])
@@ -239,9 +240,9 @@ class Base(object):
                       time.strftime("[%Y-%m-%d_%H:%M:%S] ", time.localtime()) + \
                       f"Top-1 correct / Total: {top1_correct}/{total_num}, Top-1 accuracy: {top1_correct / total_num}, Top-5 correct / Total: {top5_correct}/{total_num}, Top-5 accuracy: {top5_correct / total_num}, time: {time.time() - last_time}\n"
                 log(msg)
-                if(top1_correct/total_num>=0.82 and top1_correct/total_num<=0.86):
-                    ckpt_model_path = "targetsave/ckpt_epoch_" +str(i+1)+"_"+str(top1_correct/total_num) + ".pth"
-                    torch.save(self.model.state_dict(), ckpt_model_path)
+                # if(top1_correct/total_num>=0.82 and top1_correct/total_num<=0.86):
+                #     ckpt_model_path = "targetsave/ckpt_epoch_" +str(i+1)+"_"+str(top1_correct/total_num) + ".pth"
+                #     torch.save(self.model.state_dict(), ckpt_model_path)
 
 
                 # test result on poisoned test dataset

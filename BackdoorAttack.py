@@ -54,11 +54,12 @@ CONFIG = {
     'architecture':'stdvgg16_class10',
     'bd_type':'BadNets',
     'target_class': 0,  # 攻击目标类别
-    'poison_rate': 0.9,  # 训练集投毒比例
+    'poison_rate': 0.20,  # 训练集投毒比例
     'batch_size': 32,
     'pattern':None,
     'weight':None,
-    'epochs': 20,
+    #'epochs': 50,
+    'epochs': 50,
     'lr': 0.01,
     'device': 'GPU' if torch.cuda.is_available() else 'cpu',
     'poisoned_transform_train_index': 0,
@@ -80,94 +81,106 @@ torch.backends.cudnn.benchmark = False
 
 
 
-# 1. 灵活数据集准备
 def prepare_datasets(dataset_name):
+    # 分离训练集和验证集的预处理流程
+    common_transforms_train = []  # 训练集专用增强流程
+    common_transforms_val = []    # 验证集专用基础流程
+
     # 公共参数
-    common_transforms = []
-    if dataset_name in ['MNIST', 'CIFAR10']:
-        common_transforms.append(ToTensor())
-    elif dataset_name == 'IMAGENET10':
-        # ImageNet标准预处理流程
-        common_transforms.extend([
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
+    if dataset_name == 'MNIST':
+        common_transforms_train.append(transforms.ToTensor())
+        common_transforms_val.append(transforms.ToTensor())
+    elif dataset_name == 'CIFAR10':
+        # 训练集增强配置（参考网页1/2/4/5/9/10/11）
+        common_transforms_train.extend([
+            transforms.RandomCrop(32, padding=4),  # 随机裁剪[1,4](@ref)
+            transforms.RandomHorizontalFlip(p=0.5),  # 水平翻转[2,4](@ref)
+            transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),  # 颜色抖动[5,10](@ref)
             transforms.ToTensor(),
         ])
-    elif dataset_name == 'GTRSB':  # 新增GTRSB处理
-        common_transforms.extend([
-            transforms.Resize((64, 64)),  # 统一调整尺寸
+        # 验证集保持基础配置
+        common_transforms_val.append(transforms.ToTensor())
+    elif dataset_name == 'IMAGENET10':
+        # ImageNet标准预处理流程（保持原状）
+        common_transforms_train.extend([
+            transforms.Resize(256),
+            transforms.RandomResizedCrop(224),  # 训练集用随机裁剪
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+        ])
+        common_transforms_val.extend([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),  # 验证集用中心裁剪
+            transforms.ToTensor(),
+        ])
+    elif dataset_name == 'GTRSB':
+        # GTRSB增强配置（参考网页6/7/9）
+        common_transforms_train.extend([
+            transforms.Resize((64, 64)),
+            transforms.RandomRotation(15),  # 随机旋转±15度[7,9](@ref)
+            transforms.RandomAffine(0, shear=10),  # 随机仿射变换[10](@ref)
+            transforms.RandomPerspective(distortion_scale=0.2),  # 透视变换[10](@ref)
+            transforms.ToTensor(),
+        ])
+        # 验证集保持基础配置
+        common_transforms_val.extend([
+            transforms.Resize((64, 64)),
             transforms.ToTensor(),
         ])
     else:
         raise ValueError(f"Unsupported dataset: {dataset_name}")
 
-    # 数据集特定配置
+    # 数据集特定配置（保持原有逻辑）
     if dataset_name == 'MNIST':
-        # MNIST参数
         mean, std = (0.1307,), (0.3081,)
         dataset_class = torchvision.datasets.MNIST
         in_channels = 1
         img_size = 28
     elif dataset_name == 'CIFAR10':
-        # CIFAR10参数
         mean, std = (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)
         dataset_class = torchvision.datasets.CIFAR10
         in_channels = 3
         img_size = 32
     elif dataset_name == 'IMAGENET10':
-        # ImageNet标准归一化参数
         mean = [0.485, 0.456, 0.406]
         std = [0.229, 0.224, 0.225]
         dataset_class = torchvision.datasets.ImageFolder
         in_channels = 3
         img_size = 224
-    elif dataset_name == 'GTRSB':  # 新增GTRSB处理
-        # GTRSB参数（使用标准ImageNet参数作为示例）
-        mean = [0.3403, 0.3121, 0.3214]  # GTRSB专用均值
-        std = [0.2724, 0.2608, 0.2669]  # GTRSB专用标准差
+    elif dataset_name == 'GTRSB':
+        mean = [0.3403, 0.3121, 0.3214]
+        std = [0.2724, 0.2608, 0.2669]
         dataset_class = torchvision.datasets.ImageFolder
         in_channels = 3
         img_size = 64
-        num_classes = 43  # GTRSB有43个类别
+        num_classes = 43
 
-    else:
-        raise ValueError(f"Unsupported dataset: {dataset_name}")
+    # 添加标准化（训练/验证集共用）
+    common_transforms_train.append(transforms.Normalize(mean, std))
+    common_transforms_val.append(transforms.Normalize(mean, std))
 
-    # 添加标准化
-    common_transforms.append(Normalize(mean, std))
-
-    # 数据集加载
-    if dataset_name == 'IMAGENET10':
+    # 数据集加载逻辑调整
+    if dataset_name in ['IMAGENET10', 'GTRSB']:
         train_dataset = dataset_class(
-            root='./data/imagenet10/train',  # 根据实际路径修改
-            transform=Compose(common_transforms)
+            root=f'./data/{dataset_name.lower()}/train',
+            transform=transforms.Compose(common_transforms_train)  # 训练集用增强流程
         )
         test_dataset = dataset_class(
-            root='./data/imagenet10/val',
-            transform=Compose(common_transforms)
+            root=f'./data/{dataset_name.lower()}/val',
+            transform=transforms.Compose(common_transforms_val)  # 验证集用基础流程
         )
-    elif dataset_name=='GTRSB':
-        train_dataset = dataset_class(
-            root='./data/gtrsb/train',  # 训练集路径
-            transform=Compose(common_transforms)
-        )
-        test_dataset = dataset_class(
-            root='./data/gtrsb/val',  # 测试集路径
-            transform=Compose(common_transforms)
-        )
-
     else:
         train_dataset = dataset_class(
             root='./data',
             train=True,
             download=True,
-            transform=Compose(common_transforms)
+            transform=transforms.Compose(common_transforms_train)  # 训练集用增强流程
         )
         test_dataset = dataset_class(
             root='./data',
             train=False,
             download=True,
-            transform=Compose(common_transforms)
+            transform=transforms.Compose(common_transforms_val)  # 验证集用基础流程
         )
 
     return train_dataset, test_dataset, in_channels, img_size
@@ -342,10 +355,10 @@ def backdoorattack(arg):
         # for param in model_bd.fc.parameters():
         #     param.requires_grad = True
 
-        for param in model_raw.parameters():
-            param.requires_grad = False
-        for param in model_raw.fc.parameters():
-            param.requires_grad = True
+        # for param in model_raw.parameters():
+        #     param.requires_grad = False
+        # for param in model_raw.fc.parameters():
+        #     param.requires_grad = True
     elif arg.arch=="resnet34_class10":
         #imagenet10
         model_bd = models.resnet34(pretrained=True)
@@ -461,7 +474,7 @@ def backdoorattack(arg):
             'epochs': cfg['epochs'],
             'log_iteration_interval': 100,
             'test_epoch_interval': 5,
-            'save_epoch_interval': 10,
+            'save_epoch_interval': 5,
             'save_dir': f'checkpoints_{cfg["bd_type"]}',
             'experiment_name': f'{cfg["bd_type"]}_{cfg["dataset_name"]}_{cfg["architecture"]}'
         }
@@ -533,7 +546,7 @@ def backdoorattack(arg):
             cfg['poisoned_transform_test_index']=0
         elif cfg['dataset_name'] == 'CIFAR10':
             size = 32
-            s = 0.02
+            s = 0.03
             cfg['identity_grid'] = generate_identity_grid(size)
             cfg['noise_grid'] = torch.randn((1, size, size, 2)) * s * size  # 示例噪声
             cfg['poisoned_transform_train_index']=0
@@ -581,17 +594,24 @@ def backdoorattack(arg):
 
         if cfg['dataset_name'] == 'MNIST':
             size=28
+            s=0.3
             cfg['poisoned_transform_train_index'] = 0
             cfg['poisoned_transform_test_index'] = 0
-            watermark_type = "gradient"  # 可选 "gradient", "noise", "text"
+            watermark_type = "text"  # 可选 "gradient", "noise", "text"
             pattern, weight = generate_watermark_trigger(size, type=watermark_type)
+            cfg['pattern'] =pattern
+            cfg['weight'] =weight*s
 
         elif cfg['dataset_name'] == 'CIFAR10':
-
+            size=32
+            s=0.3
             cfg['poisoned_transform_train_index'] = 0
             cfg['poisoned_transform_test_index'] = 0
-            cfg['pattern'] = torch.rand((3, cfg['img_size'], cfg['img_size']))
-            cfg['weight'] = torch.ones((3, cfg['img_size'], cfg['img_size'])) * 0.2
+            watermark_type = "text"  # 可选 "gradient", "noise", "text"
+            pattern, weight = generate_watermark_trigger(size, type=watermark_type)
+            cfg['pattern'] =pattern
+            cfg['weight'] =weight*s
+
         elif cfg['dataset_name'] == 'IMAGENET10':
             size=224
             s=0.3
@@ -602,12 +622,14 @@ def backdoorattack(arg):
             cfg['pattern'] =pattern
             cfg['weight'] =weight*s
         elif cfg['dataset_name'] == 'GTRSB':
-
+            size=64
+            s=0.3
             cfg['poisoned_transform_train_index'] = 1
             cfg['poisoned_transform_test_index'] = 1
-
-            cfg['pattern'] = torch.rand((3, cfg['img_size'], cfg['img_size']))
-            cfg['weight'] = torch.ones((3, cfg['img_size'], cfg['img_size'])) * 0.2
+            watermark_type = "text"  # 可选 "gradient", "noise", "text"
+            pattern, weight = generate_watermark_trigger(size, type=watermark_type)
+            cfg['pattern'] =pattern
+            cfg['weight'] =weight*s
 
         attack_params.update({
             'pattern': cfg['pattern'],
