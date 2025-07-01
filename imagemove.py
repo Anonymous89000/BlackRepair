@@ -4,6 +4,8 @@ import shutil
 
 def move_images_to_target_class(rootdir, targetclassdir):
     # 获取一级目录下的所有子目录
+    print(os.listdir(rootdir))
+
     for subdir in os.listdir(rootdir):
         subdir_path = os.path.join(rootdir, subdir)
 
@@ -22,6 +24,7 @@ def move_images_to_target_class(rootdir, targetclassdir):
                     try:
                         # 如果文件已存在，抛出异常并停止处理
                         if os.path.exists(target_path):
+                            print(filename,targetclassdir)
                             raise FileExistsError(
                                 f"File {filename} already exists in {targetclassdir}, stopping process.")
 
@@ -33,6 +36,31 @@ def move_images_to_target_class(rootdir, targetclassdir):
 
 
 # 示例调用：
-rootdir = 'data/poisonedval_IMAGENET10_stdvgg16_class10_BadNets'  # 替换为你的一级目录路径
-targetclassdir = 'data/poisonedval_IMAGENET10_stdvgg16_class10_BadNets/true_class_0'  # 替换为目标目录名称
+# rootdir = 'data/poisonedval_IMAGENET10_stdvgg16_class10_BadNets'  # 替换为你的一级目录路径
+# targetclassdir = 'data/poisonedval_IMAGENET10_stdvgg16_class10_BadNets/true_class_0'  # 替换为目标目录名称
+
+# rootdir = 'data/poisonedval_IMAGENET10_stdvgg16_class10_WaNet'  # 替换为你的一级目录路径
+# targetclassdir = 'data/poisonedval_IMAGENET10_stdvgg16_class10_WaNet/true_class_0'  # 替换为目标目录名称
+
+# rootdir = 'data/poisonedval_IMAGENET10_stdvgg16_class10_Blended'  # 替换为你的一级目录路径
+# targetclassdir = 'data/poisonedval_IMAGENET10_stdvgg16_class10_Blended/true_class_0'  # 替换为目标目录名称
+
+# rootdir = 'data/poisonedval_CIFAR10_innervgg13_BadNets'  # 替换为你的一级目录路径
+# targetclassdir = 'data/poisonedval_CIFAR10_innervgg13_BadNets/true_class_0'  # 替换为目标目录名称
+
+# rootdir = 'data/poisonedval_CIFAR10_innervgg13_WaNet'  # 替换为你的一级目录路径
+# targetclassdir = 'data/poisonedval_CIFAR10_innervgg13_WaNet/true_class_0'  # 替换为目标目录名称
+
+# rootdir = 'data/poisonedval_CIFAR10_innervgg13_Blended'  # 替换为你的一级目录路径
+# targetclassdir = 'data/poisonedval_CIFAR10_innervgg13_Blended/true_class_0'  # 替换为目标目录名称
+
+# rootdir = 'data/poisonedval_GTSRB_resnet18_class43_BadNets'  # 替换为你的一级目录路径
+# targetclassdir = 'data/poisonedval_GTSRB_resnet18_class43_BadNets/true_class_0'  # 替换为目标目录名称
+
+# rootdir = 'data/poisonedval_GTSRB_resnet18_class43_WaNet'  # 替换为你的一级目录路径
+# targetclassdir = 'data/poisonedval_GTSRB_resnet18_class43_WaNet/true_class_0'  # 替换为目标目录名称
+
+rootdir = 'data/poisonedval_GTSRB_resnet18_class43_Blended'  # 替换为你的一级目录路径
+targetclassdir = 'data/poisonedval_GTSRB_resnet18_class43_Blended/true_class_0'  # 替换为目标目录名称
+
 move_images_to_target_class(rootdir, targetclassdir)

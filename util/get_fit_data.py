@@ -132,6 +132,79 @@ class CensusNet(nn.Module):
 
 
 
+# 全局缓存变量（只初始化一次）
+_cached_variants = None
+_cached_device = None
+
+def init_fairness_cache(test_x_path="data/testx.txt", sensitive_index=7, device='cpu'):
+    """
+    初始化敏感属性变体缓存，仅需调用一次（如在主函数或首次评估前调用）
+    """
+    global _cached_variants, _cached_device
+    X_np = np.loadtxt(test_x_path)
+    X_tensor = torch.tensor(X_np, dtype=torch.float32)
+    _cached_variants = generate_sensitive_variants(X_tensor, sensitive_index)
+    _cached_device = device
+    print(f"[INFO] Fairness cache initialized: {len(_cached_variants)} samples × {len(_cached_variants[0][1])} variants")
+
+def generate_sensitive_variants(X, sensitive_index):
+    """
+    为每个样本 x 生成所有敏感属性替换后的变体 x'
+    Returns:
+        variant_list: List of (x_orig, [x1', x2', ...])
+    """
+    variants = []
+    unique_vals = sorted(set(X[:, sensitive_index].tolist()))
+
+    for x in X:
+        x = x.clone()
+        sens_val = int(x[sensitive_index].item())
+        modified_versions = []
+
+        for val in unique_vals:
+            if val == sens_val:
+                continue
+            x_new = x.clone()
+            x_new[sensitive_index] = val
+            modified_versions.append(x_new)
+
+        variants.append((x, modified_versions))
+    return variants
+
+
+def cal_IDNNfairness(model):
+    """
+    高效计算模型在CENSUS上的IDNN公平性指标
+    要求先调用 init_fairness_cache() 初始化缓存
+    """
+    assert _cached_variants is not None, "Please call init_fairness_cache() before cal_IDNNfairness()"
+    model1=CensusNet(14)
+    model1.load_state_dict(model)
+    model=model1
+
+    model.eval()
+    device = _cached_device
+    model.to(device)
+
+    consistent = 0
+    total = 0
+
+    for x_orig, x_mod_list in _cached_variants:
+        x_orig = x_orig.unsqueeze(0).to(device)
+        with torch.no_grad():
+            pred_orig = model(x_orig).argmax(dim=1).item()
+
+        for x_mod in x_mod_list:
+            x_mod = x_mod.unsqueeze(0).to(device)
+            with torch.no_grad():
+                pred_mod = model(x_mod).argmax(dim=1).item()
+
+            total += 1
+            if pred_mod == pred_orig:
+                consistent += 1
+
+    fairness_score = consistent / total if total > 0 else 0.0
+    return fairness_score
 
 
 def getpara(filename,fairness):
@@ -189,6 +262,44 @@ def modify0(model, params, disturb):
     #print(count)
     return  model.copy()
 
+def cal_fairness1_gender(model,device='cpu'):
+    time_start = time.time()
+    # 修改网络
+
+
+    # 修改输入文件
+    test_x_female = np.loadtxt('census_gender/female_feature.txt')
+    test_x_male = np.loadtxt('census_gender/male_feature.txt')
+
+    model1=CensusNet(14)
+    model1.load_state_dict(model)
+    positive_male = 0
+    positive_female = 0
+    negtive_male = 0
+    negtive_female = 0
+    n = 10
+    # 测试n次得到二分类的平均数
+    for i in range(n):
+        # 返回二分类的比例，pos表示>=50K$分类的比例，neg表示<50K$分类的比例，pos+neg=1
+        pos_male, neg_male = rtest(model1, test_x_male, device)
+        positive_male = positive_male + pos_male
+        negtive_male = negtive_male + neg_male
+
+        pos_female, neg_female = rtest(model1, test_x_female, device)
+        positive_female = positive_female + pos_female
+        negtive_female = negtive_female + neg_female
+    fairness = abs(positive_female / n - positive_male / n)
+    time_end = time.time()
+    # 由于取了平均，时间对应除以n
+    time_sum = (time_end - time_start) / n
+
+    # print("男性每年收入大于等于50K$的概率：%f , 网络参数扰动为：%f" % (positive_male / n, 1))  # 对应性别的>=50K$分类的平均比例
+    # print("男性每年收入小于50K$的概率：%f, 网络参数扰动为：%f" % (negtive_male / n, 1))  # 对应性别的<50K$分类的平均比例
+    # print("女性每年收入大于等于50K$的概率：%f, 网络参数扰动为：%f" % (positive_female / n, 1))  # 对应性别的>=50K$分类的平均比例
+    # print("女性每年收入小于50K$的概率：%f, 网络参数扰动为：%f" % (negtive_female / n, 1))  # 对应性别的<50K$分类的平均比例
+    # print("网络参数扰动为%f下，公平性取值为：%f, 所用时间为：%fs\n" % (1, fairness, time_sum))
+    #print("一次公平性计算完成")
+    return fairness
 
 #加载已有网络并计算二分类数量
 def rtest(model, test_x, device):
@@ -228,8 +339,7 @@ def rtest(model, test_x, device):
     postive = pos / size
     negtive = neg / size
     return postive, negtive
-
-def cal_fairness1(model,device='cpu'):
+def cal_fairness1_age(model,device='cpu'):
     time_start = time.time()
     # 修改网络
 
@@ -240,11 +350,91 @@ def cal_fairness1(model,device='cpu'):
     model1=CensusNet(14)
     model1.load_state_dict(model)
     # 修改输入文件
-    test_x_r1 = np.loadtxt('race/r1_feature.txt')
-    test_x_r2 = np.loadtxt('race/r2_feature.txt')
-    test_x_r3 = np.loadtxt('race/r3_feature.txt')
-    test_x_r4 = np.loadtxt('race/r4_feature.txt')
-    test_x_r5 = np.loadtxt('race/r5_feature.txt')
+    test_x_a1 = np.loadtxt('census_age/a1_feature.txt')
+    test_x_a2 = np.loadtxt('census_age/a2_feature.txt')
+    test_x_a3 = np.loadtxt('census_age/a3_feature.txt')
+    test_x_a4 = np.loadtxt('census_age/a4_feature.txt')
+
+    positive_a1 = 0
+    positive_a2 = 0
+    positive_a3 = 0
+    positive_a4 = 0
+
+    negitive_a1 = 0
+    negitive_a2 = 0
+    negitive_a3 = 0
+    negitive_a4 = 0
+
+    model=model1
+    # 返回二分类的比例，pos表示>=50K$分类的比例，neg表示<50K$分类的比例，pos+neg=1
+    pos_a1, neg_a1 = rtest(model, test_x_a1, device)
+    positive_a1 = positive_a1 + pos_a1
+    negitive_a1 = negitive_a1 + neg_a1
+
+    pos_a2, neg_a2 = rtest(model, test_x_a2, device)
+    positive_a2 = positive_a2 + pos_a2
+    negitive_a2 = negitive_a2 + neg_a2
+
+    pos_a3, neg_a3 = rtest(model, test_x_a3, device)
+    positive_a3 = positive_a3 + pos_a3
+    negitive_a3 = negitive_a3 + neg_a3
+
+    pos_a4, neg_a4 = rtest(model, test_x_a4, device)
+    positive_a4 = positive_a4 + pos_a4
+    negitive_a4 = negitive_a4 + neg_a4
+
+    f1 = abs(positive_a1 - positive_a2)
+    f2 = abs(positive_a1 - positive_a3)
+    f3 = abs(positive_a1 - positive_a4)
+    f4 = abs(positive_a2 - positive_a3)
+    f5 = abs(positive_a2 - positive_a4)
+    f6 = abs(positive_a3 - positive_a4)
+
+    fair = [f1, f2, f3, f4, f5, f6]
+    fairness = sum(fair) / len(fair)
+
+    time_end = time.time()
+    time_sum = time_end - time_start
+
+    # n = 10
+    # #测试n次得到二分类的平均数
+    # for i in range(n):
+    #   #返回二分类的比例，pos表示>=50K$分类的比例，neg表示<50K$分类的比例，pos+neg=1
+    #   pos_male,neg_male = test(model, test_x_male, device)
+    #   positive_male = positive_male + pos_male
+    #   negtive_male = negtive_male + neg_male
+
+    #   pos_female,neg_female = test(model, test_x_female, device)
+    #   positive_female = positive_female + pos_female
+    #   negtive_female = negtive_female + neg_female
+    # fairness = abs(positive_female/n - positive_male/n)
+    # time_end = time.time()
+    # # 由于取了平均，时间对应除以n
+    # time_sum = (time_end - time_start) / n
+
+    # print("男性每年收入大于等于50K$的概率：%f , 网络参数扰动为：%f" % (positive_male/n, net))#对应性别的>=50K$分类的平均比例
+    # print("男性每年收入小于50K$的概率：%f, 网络参数扰动为：%f" % (negtive_male/n, net)) #对应性别的<50K$分类的平均比例
+    # print("女性每年收入大于等于50K$的概率：%f, 网络参数扰动为：%f" % (positive_female/n, net))#对应性别的>=50K$分类的平均比例
+    # print("女性每年收入小于50K$的概率：%f, 网络参数扰动为：%f" % (negtive_female/n, net)) #对应性别的<50K$分类的平均比例
+    #print("网络名称为：%s，特征%s的公平性取值为：%f, 所用时间为：%fs\n" % ("网络名称", "age", fairness, time_sum))
+    return fairness
+
+def cal_fairness1_race(model,device='cpu'):
+    time_start = time.time()
+    # 修改网络
+
+
+    # 修改输入文件
+
+
+    model1=CensusNet(14)
+    model1.load_state_dict(model)
+    # 修改输入文件
+    test_x_r1 = np.loadtxt('census_race/r1_feature.txt')
+    test_x_r2 = np.loadtxt('census_race/r2_feature.txt')
+    test_x_r3 = np.loadtxt('census_race/r3_feature.txt')
+    test_x_r4 = np.loadtxt('census_race/r4_feature.txt')
+    test_x_r5 = np.loadtxt('census_race/r5_feature.txt')
 
     positive_r1 = 0
     positive_r2 = 0

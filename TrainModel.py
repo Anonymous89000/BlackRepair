@@ -51,7 +51,7 @@ def prepare_datasets(dataset_name):
             transforms.CenterCrop(224),  # 进行中心裁剪，调整为224x224
             transforms.ToTensor(),  # 转为Tensor
         ])
-    elif dataset_name == 'GTRSB':  # 新增GTRSB处理
+    elif dataset_name == 'GTSRB':  # 新增GTRSB处理
         train_transforms.extend([
             transforms.Resize((64, 64)),  # 统一调整尺寸
             transforms.ToTensor(),
@@ -80,7 +80,7 @@ def prepare_datasets(dataset_name):
         dataset_class = datasets.ImageFolder
         in_channels = 3
         img_size = 224  # ImageNet10的标准尺寸为224
-    elif dataset_name == 'GTRSB':  # GTRSB处理
+    elif dataset_name == 'GTSRB':  # GTRSB处理
         mean = [0.3403, 0.3121, 0.3214]
         std = [0.2724, 0.2608, 0.2669]
         dataset_class = datasets.ImageFolder
@@ -112,13 +112,13 @@ def prepare_datasets(dataset_name):
             transform=transforms.Compose(test_transforms)
         )
 
-    elif dataset_name == 'GTRSB':
+    elif dataset_name == 'GTSRB':
         train_dataset = dataset_class(
-            root='./data/gtrsb/train',
+            root='./data/gtsrb/train',
             transform=transforms.Compose(train_transforms)
         )
         test_dataset = dataset_class(
-            root='./data/gtrsb/val',
+            root='./data/gtsrb/val',
             transform=transforms.Compose(test_transforms)
         )
     else:
@@ -224,6 +224,14 @@ def trainmodel(arg):
     elif arch == 'resnet34_class10':
         model = models.resnet34(pretrained=True)
         model.fc = nn.Linear(model.fc.in_features, 10)  # For 10 classes (ImageNet10)
+    elif arg.arch == "resnet18_class43":
+        # gtsrb
+        model = models.resnet18(pretrained=False)
+
+        # 修改第一层卷积：原kernel_size=7改为3，stride=2改为1
+        model.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+        model.fc = nn.Linear(512, 43)  # 调整输出层
+
     elif arch == 'innervgg16':
         model = VGG16_dense()
     elif arch == 'innervgg13':

@@ -23,7 +23,7 @@ def get_dataset_stats(dataset_name):
         mean = [0.485, 0.456, 0.406]
         std = [0.229, 0.224, 0.225]
         in_channels=3
-    elif dataset_name == 'GTRSB':
+    elif dataset_name == 'GTSRB':
         mean = [0.3403, 0.3121, 0.3214]
         std = [0.2724, 0.2608, 0.2669]
         in_channels=3
@@ -68,7 +68,7 @@ def load_test_dataset(dataset_name, data_dir='./data'):
             transforms.Resize(256),
             transforms.CenterCrop(224),
         ])
-    elif dataset_name == 'GTRSB':  # 新增GTRSB处理
+    elif dataset_name == 'GTSRB':  # 新增GTSRB处理
         transform.extend([
             transforms.Resize((64, 64)),  # 统一调整尺寸
         ])
@@ -88,8 +88,8 @@ def load_test_dataset(dataset_name, data_dir='./data'):
         return datasets.CIFAR10(root=data_dir, train=False, download=True, transform=transform)
     elif dataset_name == 'IMAGENET10':
         return datasets.ImageFolder(root=os.path.join(data_dir, 'imagenet10/val'), transform=transform)
-    elif dataset_name == 'GTRSB':
-        return datasets.ImageFolder(root=os.path.join(data_dir, 'gtrsb/val'), transform=transform)
+    elif dataset_name == 'GTSRB':
+        return datasets.ImageFolder(root=os.path.join(data_dir, 'gtsrb/val'), transform=transform)
     else:
         raise ValueError(f"Unsupported dataset: {dataset_name}")
 
@@ -123,7 +123,7 @@ def adversarialtset(arg):
             transforms.Resize(256),
             transforms.CenterCrop(224),
         ])
-    elif arg.set == 'GTRSB':  # 新增GTRSB处理
+    elif arg.set == 'GTSRB':  # 新增GTRSB处理
         transform_steps.extend([
             transforms.Resize((64, 64)),  # 统一调整尺寸
         ])

@@ -54,12 +54,12 @@ CONFIG = {
     'architecture':'stdvgg16_class10',
     'bd_type':'BadNets',
     'target_class': 0,  # 攻击目标类别
-    'poison_rate': 0.20,  # 训练集投毒比例
+    'poison_rate': 0.9,  # 训练集投毒比例
     'batch_size': 32,
     'pattern':None,
     'weight':None,
     #'epochs': 50,
-    'epochs': 50,
+    'epochs': 20,
     'lr': 0.01,
     'device': 'GPU' if torch.cuda.is_available() else 'cpu',
     'poisoned_transform_train_index': 0,
@@ -113,7 +113,7 @@ def prepare_datasets(dataset_name):
             transforms.CenterCrop(224),  # 验证集用中心裁剪
             transforms.ToTensor(),
         ])
-    elif dataset_name == 'GTRSB':
+    elif dataset_name == 'GTSRB':
         # GTRSB增强配置（参考网页6/7/9）
         common_transforms_train.extend([
             transforms.Resize((64, 64)),
@@ -147,7 +147,7 @@ def prepare_datasets(dataset_name):
         dataset_class = torchvision.datasets.ImageFolder
         in_channels = 3
         img_size = 224
-    elif dataset_name == 'GTRSB':
+    elif dataset_name == 'GTSRB':
         mean = [0.3403, 0.3121, 0.3214]
         std = [0.2724, 0.2608, 0.2669]
         dataset_class = torchvision.datasets.ImageFolder
@@ -160,7 +160,7 @@ def prepare_datasets(dataset_name):
     common_transforms_val.append(transforms.Normalize(mean, std))
 
     # 数据集加载逻辑调整
-    if dataset_name in ['IMAGENET10', 'GTRSB']:
+    if dataset_name in ['IMAGENET10', 'GTSRB']:
         train_dataset = dataset_class(
             root=f'./data/{dataset_name.lower()}/train',
             transform=transforms.Compose(common_transforms_train)  # 训练集用增强流程
@@ -397,6 +397,7 @@ def backdoorattack(arg):
         model_raw.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
         model_raw.fc = nn.Linear(512, 43)  # 调整输出层
 
+
         # 初始化新层参数
         #迁移学习 因此提取原本的卷积核参数
 
@@ -473,8 +474,8 @@ def backdoorattack(arg):
             'schedule': [int(cfg['epochs'] * 0.5), int(cfg['epochs'] * 0.75)],
             'epochs': cfg['epochs'],
             'log_iteration_interval': 100,
-            'test_epoch_interval': 5,
-            'save_epoch_interval': 5,
+            'test_epoch_interval': 1,
+            'save_epoch_interval': 1,
             'save_dir': f'checkpoints_{cfg["bd_type"]}',
             'experiment_name': f'{cfg["bd_type"]}_{cfg["dataset_name"]}_{cfg["architecture"]}'
         }
@@ -498,7 +499,7 @@ def backdoorattack(arg):
             cfg['weight'] = weight
             cfg['poisoned_transform_train_index']=2
             cfg['poisoned_transform_test_index']=2
-        elif cfg['dataset_name'] == 'GTRSB':
+        elif cfg['dataset_name'] == 'GTSRB':
             trigger_size = 5  # 更小的触发器尺寸以适应64x64分辨率
             # 创建全0模板(3通道,64x64)
             pattern = torch.zeros((3, 64, 64), dtype=torch.uint8)
@@ -553,14 +554,14 @@ def backdoorattack(arg):
             cfg['poisoned_transform_test_index']=0
         elif cfg['dataset_name'] == 'IMAGENET10':
             size = 224
-            s=0.02
+            s=0.1
             #0.01-0.1
             cfg['identity_grid'] = torch.zeros((1, size, size, 2), dtype=torch.float32)
             cfg['identity_grid']=generate_identity_grid(size)
             cfg['noise_grid'] = torch.randn((1, size, size, 2))*s*size  # 示例噪声
             cfg['poisoned_transform_train_index']=2
             cfg['poisoned_transform_test_index']=2
-        elif cfg['dataset_name'] == 'GTRSB':
+        elif cfg['dataset_name'] == 'GTSRB':
             size = 64
             s = 0.02
             cfg['identity_grid'] = generate_identity_grid(size)
@@ -621,7 +622,7 @@ def backdoorattack(arg):
             pattern, weight = generate_watermark_trigger(size, type=watermark_type)
             cfg['pattern'] =pattern
             cfg['weight'] =weight*s
-        elif cfg['dataset_name'] == 'GTRSB':
+        elif cfg['dataset_name'] == 'GTSRB':
             size=64
             s=0.3
             cfg['poisoned_transform_train_index'] = 1
@@ -719,6 +720,10 @@ def backdoorattack(arg):
         elif dataset_name == 'MNIST':
             mean = [0.1307]
             std = [0.3081]
+        elif dataset_name=='GTSRB':
+            mean = [0.3403, 0.3121, 0.3214]
+            std = [0.2724, 0.2608, 0.2669]
+
         else:
             raise ValueError("Unsupported dataset for saving images")
         # 遍历所有样本
@@ -761,9 +766,9 @@ def backdoorattack(arg):
             save_path = os.path.join(clean_class_dir, filename)
             img1 = torch.clamp(img1, 0.0, 1.0)  # <-- 关键补充步骤
             # 保存图像（禁用自动归一化）
-            #torchvision.utils.save_image(img1, save_path, normalize=False)
+            torchvision.utils.save_image(img1, save_path, normalize=False)
 
-
+        print("Finished generating poisoned backdoor dataset")
 
 
 if __name__=="__main__":

@@ -42,7 +42,7 @@ def prepare_datasets(dataset_name):
             transforms.CenterCrop(224),
             transforms.ToTensor(),
         ])
-    elif dataset_name == 'GTRSB':  # 新增GTRSB处理
+    elif dataset_name == 'GTSRB':  # 新增GTRSB处理
         common_transforms.extend([
             transforms.Resize((64, 64)),  # 统一调整尺寸
             transforms.ToTensor(),
@@ -70,7 +70,7 @@ def prepare_datasets(dataset_name):
         dataset_class = torchvision.datasets.ImageFolder
         in_channels = 3
         img_size = 224
-    elif dataset_name == 'GTRSB':  # 新增GTRSB处理
+    elif dataset_name == 'GTSRB':  # 新增GTRSB处理
         # GTRSB参数（使用标准ImageNet参数作为示例）
         mean = [0.3403, 0.3121, 0.3214]  # GTRSB专用均值
         std = [0.2724, 0.2608, 0.2669]  # GTRSB专用标准差
@@ -95,13 +95,13 @@ def prepare_datasets(dataset_name):
             root='./data/imagenet10/val',
             transform=Compose(common_transforms)
         )
-    elif dataset_name=='GTRSB':
+    elif dataset_name=='GTSRB':
         train_dataset = dataset_class(
-            root='./data/gtrsb/train',  # 训练集路径
+            root='./data/gtsrb/train',  # 训练集路径
             transform=Compose(common_transforms)
         )
         test_dataset = dataset_class(
-            root='./data/gtrsb/val',  # 测试集路径
+            root='./data/gtsrb/val',  # 测试集路径
             transform=Compose(common_transforms)
         )
 
@@ -248,9 +248,9 @@ def adversarialattack(arg):
         #eps = 0.9 steps = 90 alpha = 0.01   0%
         #eps = 0.7 steps = 70 alpha = 0.01   5.23%
     elif cfg['ad_type'] == 'CW':
-        c=1
-        kappa=0
-        steps=50
+        c=500
+        kappa=20
+        steps=100
         lr=0.01
         A=c
         B=kappa
@@ -259,7 +259,7 @@ def adversarialattack(arg):
         attack = torchattacks.CW(model_raw, c=c, kappa=kappa,steps=steps,lr=lr)
 
     # 生成并保存对抗样本
-    adattacked_saveroot=f'./data/AdAttaked_{cfg["ad_type"]}_A{A}B{B}C{C}D{D}_{cfg["dataset_name"]}'
+    adattacked_saveroot=f'./data/AdAttaked_{cfg["ad_type"]}_A{A}B{B}C{C}D{D}_{arg.arch}_{cfg["dataset_name"]}'
     os.makedirs(adattacked_saveroot, exist_ok=True)
     img_count=0
     for images, labels in tqdm(loader):

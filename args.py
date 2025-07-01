@@ -79,6 +79,9 @@ def parse_arguments():
     parser.add_argument(
         "--onlybd", help="whether to train rawmodel dataset ", type=str_to_bool, default=True,
     )
+    parser.add_argument(
+        "--method", help="method CMAES/RACOS", type=str, default="CMAES",
+    )
 
     args = parser.parse_args()
 

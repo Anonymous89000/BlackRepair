@@ -265,6 +265,11 @@ def cal_fairness1(model,device='cpu'):
     print("一次公平性计算完成")
     return  fairness
 
+def savemodel(model,targetfile):
+    model1 = CensusNet(14)
+    model1.load_state_dict(model)
+    torch.save(model1.state_dict(),targetfile)
+    return
 
 def recal_acc1(model):
     time_start = time.time()
