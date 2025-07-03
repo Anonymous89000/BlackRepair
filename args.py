@@ -74,13 +74,16 @@ def parse_arguments():
         "--savebdset", help="whether to save backdoored dataset ", type=str_to_bool, default=False,
     )
     parser.add_argument(
-        "--fldir", help="whether to save backdoored dataset ", type=str, default=None,
+        "--fldir", help="whether to save fault localization dataset ", type=str, default=None,
     )
     parser.add_argument(
         "--onlybd", help="whether to train rawmodel dataset ", type=str_to_bool, default=True,
     )
     parser.add_argument(
         "--method", help="method CMAES/RACOS", type=str, default="CMAES",
+    )
+    parser.add_argument(
+        "--addir", help="whether to save ad dataset", type=str, default=None,
     )
 
     args = parser.parse_args()
