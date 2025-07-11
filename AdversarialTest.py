@@ -139,10 +139,13 @@ def adversarialtset(arg):
         )
     transform_steps.append(transforms.Normalize(mean, std))
 
+    # print(test_dataset.classes)
+    # print(test_dataset.class_to_idx)
 
     adv_transform = transforms.Compose(transform_steps)
     adv_dataset = datasets.ImageFolder(root=adv_root, transform=adv_transform)
-
+    # print(adv_dataset.classes)
+    # print(adv_dataset.class_to_idx)
 
     # 2. 加载模型
     model = create_model(arg.arch, arg.set)
@@ -168,8 +171,8 @@ def adversarialtset(arg):
 
     #print(correct_indices)
     # 4. 根据参数过滤对抗样本
-    if  arg.includewrong==False:
-        adv_dataset = Subset(adv_dataset, correct_indices)
+    #if  arg.includewrong==False:
+    #   adv_dataset = Subset(adv_dataset, correct_indices)
 
     # 5. 测试干净数据集准确率
     clean_correct = 0
@@ -178,6 +181,7 @@ def adversarialtset(arg):
         for images, labels in clean_loader:
             images, labels = images.to(device), labels.to(device)
             outputs = model(images)
+            output1=outputs.argmax(dim=1)
             clean_correct += (outputs.argmax(dim=1) == labels).sum().item()
             clean_total += labels.size(0)
     clean_acc = clean_correct / clean_total
@@ -190,6 +194,7 @@ def adversarialtset(arg):
         for images, labels in adv_loader:
             images, labels = images.to(device), labels.to(device)
             outputs = model(images)
+            output1 = outputs.argmax(dim=1)
             adv_correct += (outputs.argmax(dim=1) == labels).sum().item()
             adv_total += labels.size(0)
     adv_acc = adv_correct / adv_total if adv_total > 0 else 0.0

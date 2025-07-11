@@ -232,13 +232,13 @@ def adversarialattack(arg):
     attack=None
     model_raw=model_raw.to(device)
     if cfg['ad_type'] == 'FGSM':
-        eps=0.3
+        eps=0.01
         A=eps
         attack = torchattacks.FGSM(model_raw, eps=eps)
     elif cfg['ad_type'] == 'PGD':
-        eps = 0.7
-        steps = 70
-        alpha = 0.01
+        eps = 0.06
+        steps = 60
+        alpha = 0.001
         A=eps
         B=steps
         C=alpha
@@ -248,9 +248,9 @@ def adversarialattack(arg):
         #eps = 0.9 steps = 90 alpha = 0.01   0%
         #eps = 0.7 steps = 70 alpha = 0.01   5.23%
     elif cfg['ad_type'] == 'CW':
-        c=500
-        kappa=20
-        steps=100
+        c=5
+        kappa=0
+        steps=300
         lr=0.01
         A=c
         B=kappa
@@ -261,27 +261,63 @@ def adversarialattack(arg):
     # 生成并保存对抗样本
     adattacked_saveroot=f'./data/AdAttaked_{cfg["ad_type"]}_A{A}B{B}C{C}D{D}_{arg.arch}_{cfg["dataset_name"]}'
     os.makedirs(adattacked_saveroot, exist_ok=True)
+
+    # 根据数据集配置反标准化参数
+    dataset_name = cfg['dataset_name']
+    if dataset_name == 'IMAGENET10':
+        mean = [0.485, 0.456, 0.406]
+        std = [0.229, 0.224, 0.225]
+    elif dataset_name == 'CIFAR10':
+        mean = [0.4914, 0.4822, 0.4465]
+        std = [0.2023, 0.1994, 0.2010]
+    elif dataset_name == 'MNIST':
+        mean = [0.1307]
+        std = [0.3081]
+    elif dataset_name == 'GTSRB':
+        mean = [0.3403, 0.3121, 0.3214]
+        std = [0.2724, 0.2608, 0.2669]
+    else:
+        raise ValueError("Unsupported dataset for saving images")
+
     img_count=0
     for images, labels in tqdm(loader):
         images, labels = images.to(device), labels.to(device)
         adv_images = attack(images, labels)
 
-        for i, (img, label) in enumerate(zip(adv_images, labels)):
-            img_count+=1
-            attacked_class_dir = os.path.join(adattacked_saveroot, str(label.item()))
+        #for i, (img, label) in enumerate(zip(adv_images, labels)):
+        for i, (adv_img, label) in enumerate(zip(adv_images, labels)):
+
+            attacked_class_dir = os.path.join(adattacked_saveroot, f"{label:05d}")
             os.makedirs(attacked_class_dir, exist_ok=True)
             img_name=f"idx{img_count}_label{label}.png"
+            img_count += 1
+            # 反标准化处理 - 新增部分
+            img_to_save = adv_img.clone().detach()
+            for t in range(img_to_save.shape[0]):  # 按通道反标准化
+                img_to_save[t] = img_to_save[t] * std[t] + mean[t]
+
+            img_to_save = torch.clamp(img_to_save, 0.0, 1.0)  # 确保像素值在[0,1]范围内
+
+
             if cfg["dataset_name"]=="MNIST":
                 # 解压单通道张量 (1,28,28) -> (28,28)
-                img_gray = img.squeeze(0)
+                img_gray = adv_img.squeeze(0)
                 # 转换为PIL图像（自动处理归一化）
                 pil_img = transforms.ToPILImage()(img_gray)
 
                 # 显式指定保存为L模式（单通道）
                 pil_img.save(os.path.join(attacked_class_dir, img_name))
             else:
+                #if img_to_save.dim() == 3:  # 确保是CxHxW格式
+                #   img_to_save = img_to_save.unsqueeze(0)  # 添加批次维度
 
-                vutils.save_image(img, os.path.join(attacked_class_dir, img_name))
+                vutils.save_image(
+                    img_to_save,
+                    os.path.join(attacked_class_dir, img_name),
+                    normalize=False  # 关键：禁用自动归一化
+                )
+                #vutils.save_image(adv_img, os.path.join(attacked_class_dir, img_name))
+
 
 
 if __name__ == '__main__':

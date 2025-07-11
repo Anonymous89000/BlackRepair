@@ -3,10 +3,14 @@ import time
 
 import numpy as np
 from zoopt import Dimension, ValueType, Dimension2, Objective, Parameter, Opt, ExpOpt
+
+import census_age.cal_fairness_age
 import util.get_fit_data
 import  util.fit_optimize
 import  util.data_process
 import util.quadratic_fitting
+import credit_age.cal_fairness_age
+import credit_gender.cal_fairness_sex
 import torch
 import cma
 
@@ -45,7 +49,7 @@ def FairnessObj(solution):
 
     params_index=util.get_fit_data.params_index_c
     #model = torch.load("data/census.pt")
-    model = torch.load("census8835.pt")
+    model = torch.load("credit_best_model.pt")
 
     count=0
     for i in params_index:
@@ -58,9 +62,9 @@ def FairnessObj(solution):
             count += 1
         model[key] = tmp_matrix.T
 
-    #fairness=util.get_fit_data.cal_fairness1_race(model.copy())
-    fairness = 1-util.get_fit_data.cal_IDNNfairness(model.copy())
-    print(fairness)
+    #fairness = credit_gender.cal_fairness_sex.cal_fairness1_gender(model.copy())
+    fairness=credit_age.cal_fairness_age.cal_fairness1_age(model.copy())
+    #fairness = 1-util.get_fit_data.cal_IDNNfairness(model.copy())
     return fairness
 
 def ComputeAcc(solution):
@@ -84,7 +88,8 @@ def ComputeAcc(solution):
             count += 1
         model[key] = tmp_matrix.T
 
-    optimized_acc = util.data_process.recal_acc1(model)
+    optimized_acc = credit_age.cal_fairness_age.recal_acc1(model)
+    #optimized_acc = util.data_process.recal_acc1(model)
     return optimized_acc
 
 def SaveOptedModel(solution,targetfile):
@@ -108,14 +113,14 @@ def SaveOptedModel(solution,targetfile):
             count += 1
         model[key] = tmp_matrix.T
 
-    optimized_acc = util.data_process.savemodel(model,targetfile)
+    optimized_acc = util.data_process.savecreditmodel(model,targetfile)
     return optimized_acc
 
 def CombineObj(solution):
     alpha=0.5
     beta=1-alpha
     Fairness_coe=0.076
-    Acc_coe=0.84
+    Acc_coe=0.98
     value=alpha*(FairnessObj(solution)-Fairness_coe)+beta*(Acc_coe-ComputeAcc(solution))
     return value
 
@@ -123,9 +128,9 @@ def CombineObj(solution):
 def repairFairness(arg):
     #为racos需要准备的东西 目标函数以及可行域
     start=time.time()
-    util.get_fit_data.init_fairness_cache("data/testx.txt", sensitive_index=7, device="cuda")
+    util.get_fit_data.init_fairness_cache("data/credit/testx.txt", sensitive_index=7, device="cuda")
 
-    if 1:
+    if 0:
         dim_size = 24  # dimension size
         dim = Dimension(dim_size, [[-1, 1]]*dim_size, [True]*dim_size)
         # dim = Dimension2([(ValueType.CONTINUOUS, [-1, 1], 1e-6)]*dim_size)
@@ -135,7 +140,7 @@ def repairFairness(arg):
         solution = Opt.min(obj, Parameter(algorithm='racos', budget=10 * dim_size))
         # print the solution
         print(solution.get_x(), solution.get_value())
-        SaveOptedModel(solution,'census_race_racos_opt.pt')
+        SaveOptedModel(solution,'credit_gender_racos_opt.pt')
         print(f"optimized net - fairness:{FairnessObj(solution):>8f}  acc:{ComputeAcc(solution):>8f}")
         solution.set_x([0]*24)
         print(solution.get_x())
@@ -155,7 +160,7 @@ def repairFairness(arg):
         # 处理结果
         best_x = es.result[0]  # 最优解
         best_solution = BestSolution(best_x)
-        SaveOptedModel(best_solution, 'census_race_cmaes_opt.pt')
+        SaveOptedModel(best_solution, 'credit_age_cmaes_opt.pt')
 
         # 打印结果
         print(f"CMA-ES最优值: {es.result[1]:.6f}")

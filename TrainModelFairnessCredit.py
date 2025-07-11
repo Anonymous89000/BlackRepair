@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import TensorDataset, DataLoader
+from torch.utils.data import TensorDataset, DataLoader, ConcatDataset
 import numpy as np
 import time
 import matplotlib.pyplot as plt  # 用于训练过程可视化
@@ -96,9 +96,28 @@ def train_model():
     train_dataset = TensorDataset(tensor_train_x, tensor_train_y)
     test_dataset = TensorDataset(tensor_test_x, tensor_test_y)
 
-    batch_size = 100
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size)
+    # 合并训练集和测试集
+    combined_dataset = ConcatDataset([train_dataset, test_dataset])
+    # 重新划分数据集：90%用于训练，10%用于验证
+    total_size = len(combined_dataset)
+    train_size = int(0.9 * total_size)
+    val_size = total_size - train_size
+
+    # 随机划分数据集
+    train_subset, val_subset = torch.utils.data.random_split(
+        combined_dataset, [train_size, val_size]
+    )
+
+    # 创建数据加载器
+    batch_size = 50
+    train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(val_subset, batch_size=batch_size)
+
+
+
+    # batch_size = 100
+    # train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    # test_loader = DataLoader(test_dataset, batch_size=batch_size)
 
     # 模型初始化
     model = CreditNet(20).to(device)
@@ -110,7 +129,7 @@ def train_model():
     val_accuracies = []
 
     # 训练循环
-    num_epochs = 4000
+    num_epochs = 1000
     best_acc = 0.0
 
     for epoch in range(num_epochs):

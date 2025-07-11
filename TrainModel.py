@@ -1,7 +1,7 @@
 import torch
 import torch.optim as optim
 import torch.nn as nn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, ConcatDataset
 from torchvision import datasets, transforms, models
 import os
 
@@ -191,6 +191,27 @@ def evaluate_model(model, test_loader, device):
     test_acc = 100 * correct / total
     return test_acc
 
+def get_dataset_stats(dataset_name):
+    """根据数据集名称获取归一化参数"""
+    if dataset_name == 'MNIST':
+        mean = (0.1307,)
+        std = (0.3081,)
+        in_channels=1
+    elif dataset_name == 'CIFAR10':
+        mean = (0.4914, 0.4822, 0.4465)
+        std = (0.2023, 0.1994, 0.2010)
+        in_channels=3
+    elif dataset_name == 'IMAGENET10':
+        mean = [0.485, 0.456, 0.406]
+        std = [0.229, 0.224, 0.225]
+        in_channels=3
+    elif dataset_name == 'GTSRB':
+        mean = [0.3403, 0.3121, 0.3214]
+        std = [0.2724, 0.2608, 0.2669]
+        in_channels=3
+    else:
+        raise ValueError(f"Unsupported dataset: {dataset_name}")
+    return mean, std,in_channels
 
 def trainmodel(arg):
     """训练模型并输出训练过程中的准确率和最后的测试准确率"""
@@ -207,6 +228,60 @@ def trainmodel(arg):
 
     # Prepare datasets
     train_dataset, test_dataset, in_channels, img_size = prepare_datasets(dataset_name)
+    adv_dataloader=None
+    if arg.advdataset!=None:
+        mean, std, in_channels = get_dataset_stats(arg.set)
+        transform_steps = []
+        if arg.set == 'IMAGENET10':
+            # ImageNet标准预处理流程
+            transform_steps.extend([
+                transforms.Resize(256),
+                transforms.CenterCrop(224),
+            ])
+        elif arg.set == 'GTSRB':  # 新增GTRSB处理
+            transform_steps.extend([
+                transforms.Resize((64, 64)),  # 统一调整尺寸
+            ])
+        else:
+            pass
+
+        # 动态构建转换流程
+        transform_steps.append(transforms.ToTensor())
+        # 通道修正（MNIST单通道特殊处理）
+        if in_channels == 1:
+            transform_steps.append(
+                transforms.Lambda(lambda x: x[:1, :, :])  # 取第一个通道
+            )
+        transform_steps.append(transforms.Normalize(mean, std))
+
+        # print(test_dataset.classes)
+        # print(test_dataset.class_to_idx)
+
+        adv_transform = transforms.Compose(transform_steps)
+        adv_dataset = datasets.ImageFolder(root=arg.advdataset, transform=adv_transform)
+        adv_dataloader=DataLoader(adv_dataset, batch_size=batch_size, shuffle=True, num_workers=4,pin_memory=True)
+        total_size=len(adv_dataset)
+        train_size = int(0.7 * total_size)
+        val_size = total_size - train_size
+        train_subset, val_subset = torch.utils.data.random_split(
+            adv_dataset, [train_size, val_size]
+        )
+        print(f"clean_train:{len(train_dataset)} clean_test:{len(test_dataset)}")
+        print(f"ad_train:{len(train_subset)} ad_test:{len(val_subset)}")
+        train_dataset=ConcatDataset([train_dataset,train_subset])
+        test_dataset=ConcatDataset([test_dataset,val_subset])
+        print(f"total_train:{len(train_dataset)} total_test:{len(test_dataset)}")
+        #
+        # train_size = int(0.9 * total_size)
+        # val_size = total_size - train_size
+        #
+        # # 随机划分数据集
+        # train_subset, val_subset = torch.utils.data.random_split(
+        #     combined_dataset, [train_size, val_size]
+        # )
+
+
+
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4,pin_memory=True)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=4,pin_memory=True)
 
@@ -275,6 +350,8 @@ def trainmodel(arg):
     else:
         print("No pre-trained model file provided. Starting training from scratch.")
 
+    model_best=None
+    acc_best=0
     # Training loop
     print(f"Training {arch} on {dataset_name}...")
     for epoch in range(epochs):
@@ -294,16 +371,32 @@ def trainmodel(arg):
             save_path = os.path.join(save_dir, f'{arch}_epoch{epoch + 1}.pth')
             torch.save(model.state_dict(), save_path)
             print(f"Model saved at {save_path}")
+            if temp_test_acc>acc_best:
+                model_best=model
+                acc_best=temp_test_acc
+
+
 
         # 更新学习率
         scheduler.step()
 
-    # Test the model after training
-    final_test_acc = evaluate_model(model, test_loader, device)
-    print(f"Final Test Accuracy on {dataset_name}: {final_test_acc:.2f}%")
 
-    # Save the final model
-    final_model_path = os.path.join(save_dir, f'{arch}_final.pth')
+
+
+    if arg.advdataset != None:
+        # Test the model after training
+        print(f"On advtest:")
+        final_test_acc = evaluate_model(model_best, adv_dataloader, device)
+        print(f"Final Test Accuracy on {dataset_name}: {final_test_acc:.2f}%")
+        adv_datasetname=arg.advdataset[5:]
+        final_model_path=os.path.join(save_dir, f'{adv_datasetname}_{int(final_test_acc*100)}final.pth')
+    else:
+        # Test the model after training
+        final_test_acc = evaluate_model(model_best, test_loader, device)
+        print(f"Final Test Accuracy on {dataset_name}: {final_test_acc:.2f}%")
+        # Save the final model
+        final_model_path = os.path.join(save_dir, f'{arch}_final.pth')
+
     torch.save(model.state_dict(), final_model_path)
     print(f"Final model saved at {final_model_path}")
 

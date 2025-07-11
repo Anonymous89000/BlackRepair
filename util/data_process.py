@@ -29,6 +29,8 @@ from torch.optim.lr_scheduler import StepLR
 import math
 import ast
 
+from credit_age.cal_fairness_age import CreditNet
+
 # 定义数据表头即参数名
 headers = ['age', 'workclass', 'fnlwgt',
            'education', 'education.num',
@@ -265,7 +267,12 @@ def cal_fairness1(model,device='cpu'):
     print("一次公平性计算完成")
     return  fairness
 
-def savemodel(model,targetfile):
+def savecreditmodel(model,targetfile):
+    model1 = CreditNet(20)
+    model1.load_state_dict(model)
+    torch.save(model1.state_dict(),targetfile)
+    return
+def savecensusmodel(model,targetfile):
     model1 = CensusNet(14)
     model1.load_state_dict(model)
     torch.save(model1.state_dict(),targetfile)
@@ -277,8 +284,8 @@ def recal_acc1(model):
     device='cuda:0'
 
     # 修改输入文件
-    test_x = np.loadtxt('data/testx.txt')
-    test_y = np.loadtxt('data/testy.txt')
+    test_x = np.loadtxt('data/census/testx.txt')
+    test_y = np.loadtxt('data//census/testy.txt')
 
     tensor_test_x = torch.FloatTensor(test_x.copy())
     tensor_test_y = torch.FloatTensor(test_y.copy())

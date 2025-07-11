@@ -739,10 +739,10 @@ def backdoorattack(arg):
             #poisoned_img, _ = attacker.poisoned_train_dataset[idx]  # 忽略毒化数据集的标签
 
             # 创建按true label分类的目录
-            poisoned_class_dir = os.path.join(poisioned_data_saveroot, f'true_class_{true_label}')
+            poisoned_class_dir = os.path.join(poisioned_data_saveroot, f'true_class_{true_label:05d}')
             os.makedirs(poisoned_class_dir, exist_ok=True)
 
-            clean_class_dir = os.path.join(clean_data_saveroot, f'true_class_{true_label}')
+            clean_class_dir = os.path.join(clean_data_saveroot, f'true_class_{true_label:05d}')
             os.makedirs(clean_class_dir, exist_ok=True)
             # 反标准化处理
 
