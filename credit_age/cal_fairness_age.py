@@ -119,46 +119,94 @@ class CreditNet(nn.Module):
 #         output = x # cross entropy in pytorch already includes softmax
 #         return output
 
+# # 加载已有网络并计算二分类数量
+# def test(model,test_x,device):
+#     tensor_test_x = torch.FloatTensor(test_x.copy()) # transform to torch tensor
+#     test_dataset = TensorDataset(tensor_test_x) # create dataset
+#     test_dataloader = DataLoader(test_dataset, batch_size=100, shuffle = False) # create dataloader
+#     # print(type(test_dataloader))
+#     size = len(test_dataloader.dataset)
+#     num_batches = len(test_dataloader)
+#     # print(size)
+#     # print(num_batches)
+#     test_loss, correct = 0, 0
+#     pos = 0
+#     neg = 0
+#     gt50 = torch.tensor([[1,0]])
+#     model.eval()
+#     with torch.no_grad():
+#         for x in test_dataloader:
+#             # x = x.to(device)
+#             # print(x)
+#             # print(type(x[0]))
+#             pred = model(x[0])
+#             pred = pred.type(torch.FloatTensor)
+#             # print(pred.shape)
+#             dim0,dim1 = pred.shape
+#             for i in range(dim0):
+#                 element = pred[0,:]
+#                 element = element.unsqueeze(0)
+#                 # print(element.shape)
+#                 # print(gt50.shape)
+#                 if(element.argmax(1)==gt50.argmax(1)):
+#                     pos = pos + 1
+#                 else:
+#                     neg = neg + 1
+#             # pred_1 = (pred.argmax(1)).type(torch.float).sum().item()
+#             # pred_0 = (pred.argmax(0)).type(torch.float).sum().item()
+#     postive = pos / size
+#     negtive = neg /size
+#     #print(postive)
+#     #print(negtive)
+#     return postive, negtive
+
+
 # 加载已有网络并计算二分类数量
-def test(model,test_x,device):
-    tensor_test_x = torch.FloatTensor(test_x.copy()) # transform to torch tensor 
-    test_dataset = TensorDataset(tensor_test_x) # create dataset                                                     
-    test_dataloader = DataLoader(test_dataset, batch_size=100, shuffle = False) # create dataloader
-    # print(type(test_dataloader))
+def test(model, test_x, device):
+    """
+    Calculates the proportion of positive (good credit) and negative (bad credit)
+    predictions for a given dataset slice.
+    """
+    model=model.to(device)
+    # Ensure the model is in evaluation mode
+    model.eval()
+    device="cuda:0"
+
+    # Prepare the data
+    tensor_test_x = torch.FloatTensor(test_x.copy())
+    test_dataset = TensorDataset(tensor_test_x)
+    # The batch size can be larger as we don't need to loop manually in Python
+    test_dataloader = DataLoader(test_dataset, batch_size=256, shuffle=False)
+
     size = len(test_dataloader.dataset)
-    num_batches = len(test_dataloader)
-    # print(size)
-    # print(num_batches)
-    test_loss, correct = 0, 0
+    if size == 0:
+        return 0, 0  # Handle empty data slices
+
     pos = 0
     neg = 0
-    gt50 = torch.tensor([[1,0]])
-    model.eval()
+
+    # No need to track gradients for this
     with torch.no_grad():
-        for x in test_dataloader:
-            # x = x.to(device)
-            # print(x)
-            # print(type(x[0]))
-            pred = model(x[0])
-            pred = pred.type(torch.FloatTensor)
-            # print(pred.shape)
-            dim0,dim1 = pred.shape
-            for i in range(dim0):
-                element = pred[0,:]
-                element = element.unsqueeze(0)
-                # print(element.shape)
-                # print(gt50.shape)
-                if(element.argmax(1)==gt50.argmax(1)):
-                    pos = pos + 1
-                else:
-                    neg = neg + 1
-            # pred_1 = (pred.argmax(1)).type(torch.float).sum().item()
-            # pred_0 = (pred.argmax(0)).type(torch.float).sum().item()
-    postive = pos / size
-    negtive = neg /size
-    #print(postive)
-    #print(negtive)
-    return postive, negtive
+        for x_batch in test_dataloader:
+            # The input x_batch is a list containing one tensor
+            data = x_batch[0].to(device)
+
+            pred = model(data)
+
+            # pred.argmax(1) returns the index of the highest value for each sample in the batch.
+            # We assume index 0 represents a "good credit" (positive) prediction.
+            positive_predictions = (pred.argmax(1) == 0).sum().item()
+            pos += positive_predictions
+
+    # The number of negative predictions is the total size minus positive ones
+    neg = size - pos
+
+    # Calculate the proportions
+    positive_rate = pos / size
+    negative_rate = neg / size
+
+    return positive_rate, negative_rate
+
 
 # 数据处理函数，生成可以用于输入网络的数据文件，首次运行后不用再运行
 def split_a1():#换数据集即可处理其他的文件

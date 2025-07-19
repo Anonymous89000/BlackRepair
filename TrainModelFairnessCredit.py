@@ -100,7 +100,7 @@ def train_model():
     combined_dataset = ConcatDataset([train_dataset, test_dataset])
     # 重新划分数据集：90%用于训练，10%用于验证
     total_size = len(combined_dataset)
-    train_size = int(0.9 * total_size)
+    train_size = int(0.8 * total_size)
     val_size = total_size - train_size
 
     # 随机划分数据集

@@ -6,6 +6,7 @@ import AdversarialAttack
 import AdversarialTest
 import RepairAdversarialAttack
 import RepairAdversarialCheck
+import RepairAdversarial_0710
 import RepairBackdoor
 import RepairBackdoorCMA
 import TrainModel
@@ -58,7 +59,8 @@ if __name__ == '__main__':
 
         pass
     elif args.mode=="repair_ad":
-        RepairAdversarialAttack.repairadversarialattack(args)
+        #RepairAdversarialAttack.repairadversarialattack(args)
+        RepairAdversarial_0710.repairadversarial(args)
         #RepairAdversarialCheck.repairadversarial(args)
         #python main.py --mode repair_ad --set GTSRB --pretrainfile trainsave/resnet18_class43_final9898.pth  --arch resnet18_class43 --fldir flresult/resnet18_gtsrb_0701-1-adv --addir data/AdAttaked_PGD_A0.7B70C0.01D0_resnet18_class43_GTSRB
 

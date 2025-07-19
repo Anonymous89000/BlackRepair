@@ -58,7 +58,7 @@ def FairnessObj(solution):
             count += 1
         model[key] = tmp_matrix.T
 
-    fairness=util.get_fit_data.cal_fairness1_age(model.copy())
+    fairness=util.get_fit_data.cal_fairness1_gender(model.copy())
     #fairness = 1-util.get_fit_data.cal_IDNNfairness(model.copy())
     print(fairness)
     return fairness
@@ -125,7 +125,7 @@ def repairFairness(arg):
     start=time.time()
     util.get_fit_data.init_fairness_cache("data/census/testx.txt", sensitive_index=7, device="cuda")
 
-    if 0:
+    if 1:
         dim_size = 24  # dimension size
         dim = Dimension(dim_size, [[-1, 1]]*dim_size, [True]*dim_size)
         # dim = Dimension2([(ValueType.CONTINUOUS, [-1, 1], 1e-6)]*dim_size)
@@ -135,7 +135,7 @@ def repairFairness(arg):
         solution = Opt.min(obj, Parameter(algorithm='racos', budget=10 * dim_size))
         # print the solution
         print(solution.get_x(), solution.get_value())
-        SaveOptedModel(solution,'census_race_racos_opt.pt')
+        SaveOptedModel(solution,'census_gender_racos_opt.pt')
         print(f"optimized net - fairness:{FairnessObj(solution):>8f}  acc:{ComputeAcc(solution):>8f}")
         solution.set_x([0]*24)
         print(solution.get_x())
@@ -155,7 +155,7 @@ def repairFairness(arg):
         # 处理结果
         best_x = es.result[0]  # 最优解
         best_solution = BestSolution(best_x)
-        SaveOptedModel(best_solution, 'census_age_cmaes_opt.pt')
+        SaveOptedModel(best_solution, 'census_gender_cmaes_opt.pt')
 
         # 打印结果
         print(f"CMA-ES最优值: {es.result[1]:.6f}")

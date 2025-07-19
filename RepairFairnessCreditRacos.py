@@ -62,8 +62,8 @@ def FairnessObj(solution):
             count += 1
         model[key] = tmp_matrix.T
 
-    #fairness = credit_gender.cal_fairness_sex.cal_fairness1_gender(model.copy())
-    fairness=credit_age.cal_fairness_age.cal_fairness1_age(model.copy())
+    fairness = credit_gender.cal_fairness_sex.cal_fairness1_gender(model.copy())
+    #fairness=credit_age.cal_fairness_age.cal_fairness1_age(model.copy())
     #fairness = 1-util.get_fit_data.cal_IDNNfairness(model.copy())
     return fairness
 
@@ -130,7 +130,7 @@ def repairFairness(arg):
     start=time.time()
     util.get_fit_data.init_fairness_cache("data/credit/testx.txt", sensitive_index=7, device="cuda")
 
-    if 0:
+    if 1:
         dim_size = 24  # dimension size
         dim = Dimension(dim_size, [[-1, 1]]*dim_size, [True]*dim_size)
         # dim = Dimension2([(ValueType.CONTINUOUS, [-1, 1], 1e-6)]*dim_size)
@@ -160,7 +160,7 @@ def repairFairness(arg):
         # 处理结果
         best_x = es.result[0]  # 最优解
         best_solution = BestSolution(best_x)
-        SaveOptedModel(best_solution, 'credit_age_cmaes_opt.pt')
+        SaveOptedModel(best_solution, 'credit_gender_cmaes_opt.pt')
 
         # 打印结果
         print(f"CMA-ES最优值: {es.result[1]:.6f}")
